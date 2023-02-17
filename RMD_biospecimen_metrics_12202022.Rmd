@@ -1,0 +1,2048 @@
+---
+title: "BiospecimenMetrics_weekly"
+author: "JingWU"
+header-includes:  
+    - \usepackage[labelformat=empty]{caption}
+
+date: "`r format(Sys.Date()-1, '%d %B, %Y')`"
+
+output:
+  pdf_document:
+    extra_dependencies: ["bbm", "threeparttable","float"]
+    toc: true
+    toc_depth: 2
+    keep_tex: yes
+    fig_width: 7
+    fig_height: 5
+    fig_caption: true
+    latex_engine: xelatex
+    df_print: paged 
+
+  header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{array}
+  - \usepackage{multirow}
+  - \usepackage[table]{xcolor}
+  - \usepackage{wrapfig}
+  - \usepackage{float}
+  - \usepackage{colortbl}
+  - \usepackage{pdflscape}
+  - \usepackage{tabu}
+  - \usepackage{threeparttable}
+  - \usepackage[normalem]{ulem}    
+---
+
+```{r setup,eval=TRUE,include=FALSE,echo=FALSE}
+
+library(bigrquery)
+library(data.table) ###to write or read and data management 
+library(readxl)
+library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management
+library(dplyr) ###data management
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+library(sqldf) ##sql
+library(lubridate) ###date time
+library(ggplot2) ###plots
+library(ggpubr) ###for the publications of plots
+library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
+library(gridExtra)
+library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tinytex) #for pdf
+library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+#library(sas7bdat) ###input data
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html t
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+library(summarytools) ##recommended
+library(gmodels) ##recommended
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+options(knitr.table.format = "latex")
+currentDate <- Sys.Date()
+
+```
+
+```{r, eval=TRUE,echo=FALSE,include=FALSE,results='hold'}
+##import data to R
+bq_auth()
+1
+project <- "nih-nci-dceg-connect-prod-6d04"
+billing <- "nih-nci-dceg-connect-prod-6d04" ##project and billing should be consistent
+
+bio_tb <- bq_project_query(project, query="SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.biospecimen_JP`")
+biospe <- bq_table_download(bio_tb,bigint="integer64")
+
+# Check that it doesn't match any non-number
+numbers_only <- function(x) !grepl("\\D", x)
+
+cnames <- names(biospe)
+###to check variables in recr_noinact_wl1
+
+for (i in 1: length(cnames)){
+  varname <- cnames[i]
+  var<-pull(biospe,varname)
+  biospe[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+tb_box <- bq_project_query(project, query="SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.boxes_JP`")
+box_wl_flat <- bigrquery::bq_table_download(tb_box,bigint = "integer64")
+
+#y <- read_table(urlfile1,header = TRUE, sep = "\t", na.strings = c("NA","N/A",""),fill = TRUE, quote='')
+library(rio)
+dictionary <- rio::import("https://episphere.github.io/conceptGithubActions/aggregate.json",format = "json")
+dd<-rbindlist(dictionary,fill=TRUE,use.names=TRUE,idcol="CID") #THIS TABLE HAS REPLICATED (CIDS+LABELS) WITH DIFFERENT VARIABLE NAMES,
+dd <- dd[!duplicated(dd),]
+# dd <- as.data.frame(do.call("rbind",dictionary))
+# colnames(dd) <- c("Variable Label", "Variable Name")
+# dd$CID <- rownames(dd)
+urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github
+y <- read.csv(urlfile)
+
+
+#to convert the numeric variables
+numbers_only <- function(x) !grepl("\\D", x)
+
+cnames <- names(box_wl_flat)
+###to check variables in recr_noinact_wl1
+data2 <- box_wl_flat
+for (i in 1: length(cnames)){
+  varname <- cnames[i]
+  var<-pull(data2,varname)
+  data2[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+
+pct_tb <- function(x,y){
+  table1 <- CrossTable(x,y, prop.t=FALSE, prop.r=FALSE, prop.c=TRUE,chisq=FALSE)
+  pct <- as.data.frame(cbind(table1$prop.row,table1$t))
+  if(ncol(pct)==2){
+    total <- as.numeric(sum(pct[,2]))
+    pct[nrow(pct)+1,c(1:2)] <- c(1,total)
+    rownames(pct)[nrow(pct)] <- "Total"
+    colnames(pct)[1] <- paste0("pct_",colnames(pct)[1])
+    colnames(pct)[2] <- paste0("n_",colnames(pct)[2])
+    
+  }
+  else  if(ncol(pct)>2 ){
+    total <- as.numeric(sum(pct[,3] + pct[,4]))
+    pct[nrow(pct)+1,c(1:4)] <- c(sum(pct[,3])/total,sum(pct[,4])/total,sum(pct[,3]),sum(pct[,4]))
+    rownames(pct)[nrow(pct)] <- "Total"
+    colnames(pct)[c(1:2)] <- paste0("pct_",colnames(pct[c(1:2)]))
+    colnames(pct)[c(3:4)] <- paste0("n_",colnames(pct)[c(3:4)])
+  
+    pct[,5] <- paste0(format(pct[,3],big.mark=","), " (",round(100*pct[,1],2), " %)")
+    pct[,6] <- paste0(format(pct[,4],big.mark=","), " (",round(100*pct[,2],2), " %)") 
+    colnames(pct)[5] <- paste0("n_",colnames(pct)[1])
+    colnames(pct)[6] <- paste0("n_",colnames(pct)[2])
+  }
+return(pct)
+}
+
+
+
+##to select biospecimen data in recruitment (not exist:"d_173836415_d_266600170_d_611091485","d_173836415_d_266600170_d_646899796","d_173836415_d_266600170_d_951355211",);
+biovar <- c("d_512820379", "d_821247024", "d_914594314", "d_822499427", "d_222161762", "Connect_ID", "d_827220437", "token",
+"d_265193023", "d_878865966", "d_167958071", "d_684635302", "d_253883960", "d_534669573", 
+"d_764863765", "d_331584571_d_266600170_d_135591601", "d_331584571_d_266600170_d_840048338", "d_331584571_d_266600170_d_343048998", 
+"d_173836415_d_266600170_d_139245758", "d_173836415_d_266600170_d_185243482",
+"d_173836415_d_266600170_d_198261154", "d_173836415_d_266600170_d_210921343", "d_173836415_d_266600170_d_224596428",
+"d_173836415_d_266600170_d_316824786", "d_173836415_d_266600170_d_341570479", "d_173836415_d_266600170_d_398645039",
+"d_173836415_d_266600170_d_448660695", "d_173836415_d_266600170_d_452847912", "d_173836415_d_266600170_d_453452655",
+"d_173836415_d_266600170_d_530173840", "d_173836415_d_266600170_d_534041351", "d_173836415_d_266600170_d_541311218",
+"d_173836415_d_266600170_d_561681068", "d_173836415_d_266600170_d_592099155", 
+ "d_173836415_d_266600170_d_693370086", "d_173836415_d_266600170_d_718172863",
+"d_173836415_d_266600170_d_728696253", "d_173836415_d_266600170_d_740582332", "d_173836415_d_266600170_d_769615780",
+"d_173836415_d_266600170_d_786930107", "d_173836415_d_266600170_d_822274939", "d_173836415_d_266600170_d_847159717",
+"d_173836415_d_266600170_d_860477844", "d_173836415_d_266600170_d_915179629", "d_173836415_d_266600170_d_939818935",
+ "d_173836415_d_266600170_d_982213346")
+
+
+recr_var <- bq_project_query(project, query="SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants_JP'")
+recrvar <- bigrquery::bq_table_download(recr_var,bigint = "integer64")
+library(readr)
+urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github 
+y <- read.csv(urlfile) #the masterDD has just been updated which can't easily pulled from github directly as before. I need to download from the raw file in the github
+
+
+recrvar_nd <- recrvar[which(grepl("d_",recrvar$column_name)),c("column_name","field_path")]
+recrvar_nd$last.CID <- ifelse(grepl("d_",recrvar_nd$column_name),substring(sapply(strsplit(recrvar_nd$column_name,"d_"),tail,1),1,9),NA)
+recrvar_nd_label <- merge(recrvar_nd, y[,c("Primary.Source","conceptId.2","conceptId.3","Variable.Label","conceptId.4","Current.Format.Value")],by.x="last.CID",by.y="conceptId.3",all.x=TRUE)
+recrvar.bio <- recrvar_nd_label[which(recrvar_nd_label$Primary.Source == "Biospecimen" | grepl("biospecimen|blood|urine|mouthwash|collection",recrvar_nd_label$Variable.Label)),] #49
+query <- recrvar.bio$column_name
+
+#data <- readRDS("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/recruit2023-02-06.rds")
+#recr.bio<- data[which(data$d_821247024==197316935),(colnames(data) %in% c("Connect_ID","token","d_512820379", "d_821247024", "d_914594314", "d_827220437","date", query))] 
+
+select <- paste(recrvar.bio$column_name,collapse=",")
+
+
+ tb_bq <- eval(parse(text=paste("bq_project_query(project, query=\"SELECT token,Connect_ID,d_512820379,d_821247024,d_914594314,d_827220437,d_699625233, date,", select,"FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` Where d_821247024 = '197316935' \")",sep=" ")))
+ 
+ recr.bio <- bigrquery::bq_table_download(tb_bq,bigint = "integer64")
+
+# tb <- bq_project_query(project, query="SELECT d_512820379,d_821247024, d_914594314, d_822499427, d_222161762, Connect_ID, d_827220437, token,d_265193023, d_878865966, d_167958071, d_684635302, d_253883960, d_534669573, d_764863765, d_331584571_d_266600170_d_135591601,d_331584571_d_266600170_d_840048338,  d_331584571_d_266600170_d_343048998, d_173836415_d_266600170_d_139245758, d_173836415_d_266600170_d_185243482,
+# d_173836415_d_266600170_d_198261154, d_173836415_d_266600170_d_210921343, d_173836415_d_266600170_d_224596428,
+# d_173836415_d_266600170_d_316824786, d_173836415_d_266600170_d_341570479, d_173836415_d_266600170_d_398645039,
+# d_173836415_d_266600170_d_448660695, d_173836415_d_266600170_d_452847912, d_173836415_d_266600170_d_453452655,
+# d_173836415_d_266600170_d_530173840, d_173836415_d_266600170_d_534041351, d_173836415_d_266600170_d_541311218,
+# d_173836415_d_266600170_d_561681068, d_173836415_d_266600170_d_592099155, d_173836415_d_266600170_d_611091485,
+# d_173836415_d_266600170_d_646899796, d_173836415_d_266600170_d_693370086, d_173836415_d_266600170_d_718172863,
+# d_173836415_d_266600170_d_728696253, d_173836415_d_266600170_d_740582332, d_173836415_d_266600170_d_769615780,
+# d_173836415_d_266600170_d_786930107, d_173836415_d_266600170_d_822274939, d_173836415_d_266600170_d_847159717,
+# d_173836415_d_266600170_d_860477844, d_173836415_d_266600170_d_915179629, d_173836415_d_266600170_d_939818935,
+# d_173836415_d_266600170_d_951355211, d_173836415_d_266600170_d_982213346 FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` WHERE d_821247024 = '197316935'")
+
+#recr.bio <- bq_table_download(tb,bigint="integer64")
+
+
+cnames <- names(recr.bio)
+###to check variables in recr_noinact_wl1
+recrver <- recr.bio
+for (i in 1: length(cnames)){
+  varname <- cnames[i]
+  var<-pull(recrver,varname)
+  recrver[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+names(recrver)
+# d_512820379	as	RcrtSI_RecruitType_v1r0,
+# d_821247024	as 	RcrtV_Verification_v1r0, 
+# d_914594314	as	RcrtV_VerificationTm_V1R0,
+# d_822499427	as	SrvBLM_TmStart_v1r0, /*Date/time Status of Start of blood/urine/mouthwash research survey*/
+#   d_222161762	as	SrvBLM_TmComplete_v1r0,	/*Date/Time blood/urine/mouthwash research survey completed*/
+#   studyId	as	studyId,
+# Connect_ID	as	Connect_ID, 
+# d_827220437 as	RcrtES_Site_v1r0,
+# d_265193023	as	SrvBLM_ResSrvCompl_v1r0, /*Blood/urine/mouthwash combined research survey*/
+#   d_878865966	as	BioFin_BaseBloodCol_v1r0, /*Baseline Blood Collected*/
+#   d_167958071	as	BioFin_BaseUrineCol_v1r0, /*Baseline Urine collected*/
+#   d_684635302	as	BioFin_BaseMouthCol_v1r0, /*	Baseline MW Collected*/
+#   d_331584571_d_266600170_d_135591	as	BL_BioChk_Complete_v1r0, /*Baseline Check in complete*/
+#   d_331584571_d_266600170_d_840048	as	BL_BioChk_Time_v1r0, /*Autogenerated date/time baseline check in complete*/  
+#   d_331584571_d_266600170_d_343048	as	BL_BioFin_CheckOutTime_v1r0, /*Autogenerated date/time baseline check out complete*/
+#   d_173836415_d_266600170_d_448660	as	BL_BioFin_BMTime_v1r0, /*Autogenerated date/time baseline MW collected*/ 
+#   d_173836415_d_266600170_d_561681	as	BL_BioFin_BBTime_v1r0, /*Autogenerated date/time baseline blood collected*/
+#   d_173836415_d_266600170_d_847159	as	BL_BioFin_BUTime_v1r0, /*Autogenerated date/time baseline urine collected updated in Warren's code*/
+# d_173836415_d_266600170_d_592099	as	BL_BioSpm_BloodSetting_v1r0, /*Blood Collection Setting*/
+# d_173836415_d_266600170_d_718172	as	BL_BioSpm_UrineSetting_v1r0, /*Urine Collection Setting*/
+# d_173836415_d_266600170_d_915179	as	BL_BioSpm_MWSetting_v1r0/*, Mouthwash Collection Setting*/
+
+
+
+#recrver_CID <- substring(names(recrver),length())
+
+
+recrver1 <- expss::apply_labels(recrver,
+                        d_512820379 = "Recruitment type",#RcrtSI_RecruitType_v1r0
+                        d_512820379=c(	"Not active"=180583933,  
+                                       "Active"= 486306141, 
+                                       "Passive"=854703046),
+                        d_821247024 = "Verification status", #RcrtV_Verification_v1r0
+                        d_821247024 = c("Not yet verified" =875007964,
+                                        "Verified"=197316935,  
+                                        "Cannot be verified"=219863910, 
+                                        "Duplicate"=922622075 , 
+                                        "Outreach timed out"= 160161595),
+                        d_827220437 = "Site",#RcrtES_Site_v1r0
+                        d_827220437 = c("HealthPartners"= 531629870, "Henry Ford Health System"=548392715,"Marshfield Clinic Health System" = 303349821,"Sanford Health" = 657167265, "University of Chicago Medicine" = 809703864,"Kaiser Permanente Colorado" = 125001209,"Kaiser Permanente Georgia" = 327912200,"Kaiser Permanente Hawaii" = 300267574,"Kaiser Permanente Northwest" = 452412599,"National Cancer Institute" = 517700004,"National Cancer Institute" = 13,"Other" = 181769837),
+                        d_914594314 = "Verification status time",   #RcrtV_VerificationTm_V1R0
+                        d_878865966 = "Baseline blood sample collected", #BioFin_BaseBloodCol_v1r0
+                        d_878865966 = c("Any blood collected"=353358909, "No blood collected"=104430631),
+                        d_173836415_d_266600170_d_561681068 = "Date/time basline Research Blood Collected",#BL_BioFin_BBTime_v1r0
+                        d_684635302 = "Baseline Mouthwash Collected",    #BioFin_BaseMWCol_v1r0
+                        d_684635302 = c("Any mouthwash collected"=353358909,"No mouthwash collected"= 104430631  ),
+                        d_173836415_d_266600170_d_448660695 = "Date/time Mouthwash Collected", #
+                        d_167958071 = "Baseline Urine Collected", 
+                        d_167958071 = c( "Any urine collected"=353358909, "No urine collected"=104430631),
+                        d_173836415_d_266600170_d_847159717 = "Baseline Date/time Urine Collected",
+                        d_331584571_d_266600170_d_135591601 = "Baseline Check-In Complete",#BL_BioChk_Complete_v1r0
+                        d_331584571_d_266600170_d_135591601 =  c( "No"=104430631, "Yes"=353358909 ),
+                        d_331584571_d_266600170_d_840048338 = "Date/Time Baseline Check-In Complete",
+                        d_331584571_d_266600170_d_343048998 = "Time Baseline check out complete",#
+                        d_173836415_d_266600170_d_592099155 = "Blood Collection Setting",#BL_BioSpm_BloodSetting_v1r0
+                        d_173836415_d_266600170_d_592099155 =c("Research"=534621077, "Clinical"= 664882224,"Home" =103209024),
+                        d_173836415_d_266600170_d_718172863 = "Urine Collection Setting",#BL_BioSpm_UrineSetting_v1r0
+                        d_173836415_d_266600170_d_718172863 =c("Research"=534621077, "Clinical"= 664882224,"Home" =103209024),
+                        d_173836415_d_266600170_d_915179629 = "Mouthwash Collection Setting",#BL_BioSpm_MWSetting_v1r0
+                        d_173836415_d_266600170_d_915179629 =c("Research"=534621077, "Clinical"= 664882224,"Home" =103209024),
+                        
+                        d_265193023 = "Blood/urine/mouthwash combined research survey-Complete",   
+                        d_265193023 = c(	"Not Started" =	972455046, "Started"= 615768760,"Submitted"= 231311385),#SrvBLM_ResSrvCompl_v1r0
+                        d_822499427 = "Placeholder (Autogenerated) - Date/time Status of Start of blood/urine/mouthwash research survey",#SrvBLM_TmStart_v1r0
+                        d_222161762  = "Placeholder (Autogenerated)- Date/Time blood/urine/mouthwash research survey completed" #   SrvBLM_TmComplete_v1r0
+)
+
+###to convert to categorical variables
+recrver1$RcrtSI_RecruitType_v1r0 <- factor(recrver1$d_512820379, exclude=NULL)
+recrver1$RcrtV_Verification_v1r0 <- factor(recrver1$d_821247024, exclude=NULL)
+recrver1$BioFin_BaseMWCol_v1r0  <-factor(recrver1$d_684635302,exclude=NULL)
+recrver1$BioFin_BaseBloodCol_v1r0 <- factor(recrver1$d_878865966,exclude=NULL)
+recrver1$BioFin_BaseUrineCol_v1r0 <- factor(recrver1$d_167958071,exclude=NULL)
+recrver1$SrvBLM_ResSrvCompl_v1r0 <-factor(recrver1$d_265193023,exclude=NULL)
+recrver1$BL_BioSpm_MWSetting_v1r0 <- factor(recrver1$d_173836415_d_266600170_d_915179629,levels=c("Clinical","Research","Home"))
+recrver1$BL_BioSpm_UrineSetting_v1r0 <- factor(recrver1$d_173836415_d_266600170_d_718172863, levels=c("Clinical","Research","Home"))
+recrver1$BL_BioSpm_BloodSetting_v1r0 <- factor(recrver1$d_173836415_d_266600170_d_592099155,levels=c("Clinical","Research","Home"))
+recrver1$BL_BioChk_Complete_v1r0 <- factor(recrver1$d_331584571_d_266600170_d_135591601,exclude=NULL)
+
+# recrver1 <- recrver1 %>% mutate(Site = case_when(d_827220437 == 531629870 ~"HealthPartners",
+#                                                  d_827220437==548392715 ~"Henry Ford Health System",
+#                                                  d_827220437== 303349821 ~"Marshfield Clinic Health System" ,
+#                                                   d_827220437== 657167265 ~"Sanford Health", 
+#                                                  d_827220437== 809703864 ~"University of Chicago Medicine",
+#                                                  d_827220437 ==125001209 ~"Kaiser Permanente Colorado",
+#                                                   d_827220437== 327912200 ~"Kaiser Permanente Georgia",
+#                                                  d_827220437== 300267574 ~"Kaiser Permanente Hawaii" ,
+#                                                  d_827220437== 452412599 ~"Kaiser Permanente Northwest" ,
+#                                                  d_827220437 %in% c(517700004, 13) ~"National Cancer Institute",
+#                                                   d_827220437== 181769837 ~"Other"),
+#                                 )
+
+recrver1$Site <-factor(recrver1$d_827220437,levels=c("HealthPartners", "Henry Ford Health System","Marshfield Clinic Health System",
+                             "Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado",
+                             "Kaiser Permanente Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest",
+                             "National Cancer Institute","Other"))
+recrver1<- recrver1 %>% mutate(BldCollection = ifelse(recrver1$BioFin_BaseBloodCol_v1r0 == 353358909, "YES", "No"))
+
+
+#biospe <- read.csv("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_biospecimen_2023-02-06.csv",header = T)
+###requested from Michelle to check the biospeimen data today Nov. 28, 2022
+#biospe <- read.csv("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Connect_stg_flatBiospecimen_JP_11082022.csv",header = T)
+
+##to check the duplicate collection by verified participants Connect_ID
+
+biospe[duplicated(biospe$Connect_ID),c("Connect_ID","d_820476880","d_410912345","d_387108065")]
+biospe[duplicated(biospe$Connect_ID),"Connect_ID"]
+#[1] 4289925849 7154937817 2699722546
+# Connect_ID
+# <int64>
+#   1 2513005250
+# 2 2699722546
+# 3 4289925849
+# 4 7154937817
+# 5 8087190864
+biospe$Connect_ID[duplicated(biospe$Connect_ID)]
+#integer64
+#[1] 2513005250 2699722546 4289925849 7154937817 8087190864 #5
+dupid <- biospe$Connect_ID[duplicated(biospe$Connect_ID)]
+#1219400073 2310991421 2513005250 2699722546 4289925849 7154937817 8087190864
+##d_387108065	as BioSpm_ColIDEntered_v1r0,/*"Collection ID Manually Entered"*/
+##d_410912345	as BioRec_CollectFinal_v1r0,/* "Collection Entry Finalized"*/
+biospe[which(biospe$Connect_ID %in% dupid),c("Connect_ID","d_820476880","d_410912345","d_387108065","d_143615646_d_593843561","d_973670172_d_593843561")]
+
+table(biospe$d_410912345, biospe$d_387108065)##353358909 411
+##            104430631 353358909
+##353358909       400        11
+
+##the biospecimen concepts for the biospecimen variablesbles
+biospe_var <- as.data.frame((colnames(biospe)))
+colnames(biospe_var)[1] <- "variable"
+biospe_var$cid1 <- sapply(strsplit(colnames(biospe),"_"), "[", 2)
+biospe_var$cid2 <- sapply(strsplit(colnames(biospe),"_"), "[", 4)
+biospe_var$cid3 <- sapply(strsplit(colnames(biospe),"_"), "[", 6)
+biospe_var$cid_tail <- sapply(strsplit(colnames(biospe),"_"), tail,1)
+
+
+CID <- unique(c(biospe_var$cid1,biospe_var$cid2,biospe_var$cid3))
+# biospe_CIDs <- list()
+# for (i in 1:length(CID)){
+#   ID <- CID[i]
+#   biospe_CIDs[[i]] <- dd[grepl(ID,colnames(dd)),]
+#   
+# }
+# 
+# biospe_CIDs1 <-  biospe_CIDs[sapply(biospe_CIDs, function(x) dim(x)[1])]
+# biospe_CID <- unique(as.data.frame(do.call('rbind',biospe_CIDs[sapply(biospe_CIDs, function(x) dim(x)[1]) >0])))
+# 
+
+biospe_CID <- dd[which(dd$CID %in% CID),]
+biospe_dd<- merge(biospe_var,biospe_CID,by.x="cid_tail",by.y="CID", all.x=TRUE)
+
+
+tubes <- dd[grepl(" Tube ",dd$`Variable Label`),]
+
+urine <- dd[grepl("Urine",dd$`Variable Label`),]
+mouthwash <- dd[grepl("Mouthwash",dd$`Variable Label`),]
+
+
+#sapply((strsplit(colnames(recrver),"d_")),tail,1)
+
+###table1 Percent (and number) of verified participants with baseline biospecimen collections by site
+##for any biospecimen collections
+recrver1 <- recrver1 %>% mutate(BiospeCollection = ifelse((recrver1$d_684635302 == 353358909 | recrver1$d_878865966 == 353358909| recrver1$d_167958071 == 353358909), "Any biospecimen Collections","No biospecimen collections"))
+
+recrver1$Site<- droplevels(recrver1$Site)
+
+
+biocol <- c("BiospeCollection","BioFin_BaseBloodCol_v1r0","BioFin_BaseUrineCol_v1r0","BioFin_BaseMWCol_v1r0")
+biocol.tbs <- list()
+for (i in 1:4){
+   tmp <- eval(parse(text=paste("pct_tb(recrver1$Site,recrver1$",biocol[i],")",sep="")))
+   tmp <- tmp[,grepl("n_",colnames(tmp))]
+   tmp$site <- rownames(tmp)
+   biocol.tbs[[i]] <- tmp
+} 
+
+biospe.t1 <- biocol.tbs[[1]]
+ biospe.t1$Total <- biospe.t1$`n_Any biospecimen Collections` + biospe.t1$`n_No biospecimen collections`
+# biospe.t1$`n_pct_Any biospecimen Collections` <- ifelse(biospe.t1$site != "Total", biospe.t1$`n_pct_Any biospecimen Collections`, format(biospe.t1$`n_Any biospecimen Collections`,big.mark=","))
+# 
+# biospe.t1$`n_pct_No biospecimen collections` <- ifelse(biospe.t1$site != "Total", biospe.t1$`n_pct_No biospecimen collections`, format(biospe.t1$`n_No biospecimen collections`,big.mark=","))
+
+colnames(biospe.t1) <- gsub("n_pct_", "",colnames(biospe.t1))
+# Total <- as.data.frame(biospe.t1[which(biospe.t1$site=="Total"),c("site","n_pct_Any biospecimen Collections","n_pct_No biospecimen collections","Total")])
+# Total$`n_pct_Any biospecimen Collections` <- sapply(strsplit(Total$`n_pct_Any biospecimen Collections`, " "), "[", 1)
+# Total$`n_pct_No biospecimen collections` <- sapply(strsplit(as.character(Total$`n_pct_No biospecimen collections`), " "), "[", 1)
+
+#blood
+biospe.bld <- biocol.tbs[[2]]
+#biospe.bld$`n_pct_No blood collected` <- ifelse(biospe.bld$site != "Total", biospe.bld$`n_pct_No blood collected`, format(biospe.bld$`n_No blood collected`,big.mark=","))
+
+# biospe.bld$`n_pct_Any blood collected` <- ifelse(biospe.bld$site != "Total", biospe.bld$`n_pct_Any blood collected`, format(biospe.bld$`n_Any blood collected`,big.mark=","))
+ biospe.bld$Total <- biospe.bld$`n_No blood collected` + biospe.bld$`n_Any blood collected`
+
+colnames(biospe.bld) <- gsub("n_pct_", "",colnames(biospe.bld))
+
+#urine
+biospe.urine <- biocol.tbs[[3]]
+# biospe.urine$`n_pct_No urint collected` <- ifelse(biospe.urine$site != "Total", biospe.urine$`n_pct_No urine collected`, format(biospe.urine$`n_No urine collected`,big.mark=","))
+# 
+# biospe.urine$`n_pct_Any urine collected` <- ifelse(biospe.urine$site != "Total", biospe.urine$`n_pct_Any urine collected`, format(biospe.urine$`n_Any urine collected`,big.mark=","))
+ biospe.urine$Total <- biospe.urine$`n_No urine collected` + biospe.urine$`n_Any urine collected`
+
+colnames(biospe.urine) <-  gsub("n_pct_", "",colnames(biospe.urine))
+
+#mouthwash
+biospe.mw <- biocol.tbs[[4]]
+# biospe.mw$`n_pct_No mouthwash collected` <- ifelse(biospe.mw$site != "Total", biospe.mw$`n_pct_No mouthwash collected`, format(biospe.mw$`n_No mouthwash collected`,big.mark=","))
+# 
+# biospe.mw$`n_pct_Any mouthwash collected` <- ifelse(biospe.mw$site != "Total", biospe.mw$`n_pct_Any mouthwash collected`, format(biospe.mw$`n_Any mouthwash collected`,big.mark=","))
+ biospe.mw$Total <- biospe.mw$`n_No mouthwash collected` + biospe.mw$`n_Any mouthwash collected`
+
+colnames(biospe.mw) <- gsub("n_pct_", "",colnames(biospe.mw))
+
+
+#option2.
+Table1_biospecol <- recrver1 %>% dplyr::select(Site, BiospeCollection )  %>% tbl_cross(
+  row = Site,
+  col = BiospeCollection,
+  digits=c(0,2),
+  percent = "row",
+  label=list(Site="Site",
+             BiospeCollection = "Baseline Biospecimen Collections"),
+  missing="ifany") %>%
+  #bold_labels() %>%
+  #italicize_levels() %>% 
+  modify_header() %>%
+  modify_caption("table1 Number (and percent) of verified participants with any baseline biospecimen collections by site") %>%
+  as_kable_extra(escape = FALSE, addtl_fmt = TRUE)
+
+table(recrver1$Site)
+t_site <- as.data.frame(tab1(recrver1$Site)[[2]])
+
+explanatory = "Site"
+dependent = 'BiospeCollection'
+recrver1 %>%
+  summary_factorlist(dependent, explanatory, 
+                     p=FALSE, add_dependent_label=TRUE) -> t1
+
+
+colnames(t1)[2] <- "Site"
+t1_all <- merge(t1, t_site, by.x="Site",by.y="row.names",all.y=TRUE)
+t1_all[1,c(3,4)] <- table(recrver1$BiospeCollection)
+t1_all1 <- t1_all[c(4:7,2,3,8:10,1),c(1,4,3,5)]
+colnames(t1_all1)[4] <- "Total"
+
+###Table 2 Percent (and number) of verified participants with baseline blood collected by site
+Table2_bldcol <- recrver1 %>% dplyr::select(Site, BioFin_BaseBloodCol_v1r0 )  %>% tbl_cross(
+  row = Site,
+  col = BioFin_BaseBloodCol_v1r0,
+  percent = "row",
+  digits=c(0,2),
+  label=list(Site~"Site", BioFin_BaseBloodCol_v1r0 ~ "Baseline Blood Collections" ),
+  missing="ifany",
+  missing_text="Unknown") %>%
+  #bold_labels() %>%
+  #italicize_levels() %>% 
+  modify_header() %>%
+  modify_caption("Table 2. Number (and percent) of verified participants with baseline blood collected by site") %>%
+  as_kable_extra(escape = FALSE, addtl_fmt = TRUE)
+
+###Table 3 Percent (and number) of verified participants with baseline urine collected by site
+Table3_urincol <- recrver1 %>% dplyr::select(Site, BioFin_BaseUrineCol_v1r0 )  %>% tbl_cross(
+  row = Site,
+  col = BioFin_BaseUrineCol_v1r0,
+  percent = "row",
+  digits=c(0,2),
+  label=list(Site~"Site", BioFin_BaseUrineCol_v1r0 ~ "Baseline Urine Collections" ),
+  missing="ifany",
+  missing_text="Unknown") %>%
+  #bold_labels() %>%
+  #italicize_levels() %>% 
+  modify_header(label ~ "Baseline Urine Collections") %>%
+  modify_caption("Table 3. Number (and percent) of verified participants with baseline urine collected by site") %>%
+  as_kable_extra(escape = FALSE, addtl_fmt = TRUE)
+
+##option 2 for table 3
+recrver1 = apply_labels(recrver1,
+                        Site = "Site",
+                        BioFin_BaseUrineCol_v1r0 = "Baseline Urine collected"
+)
+
+#t_site$freq_pct <- paste0(t_site$Frequency," (",t_site$Percent, "%)")
+
+
+table(recrver1$Site)
+explanatory = "Site"
+dependent = 'BioFin_BaseUrineCol_v1r0'
+recrver1 %>%
+  summary_factorlist(dependent, explanatory, 
+                     p=FALSE, add_dependent_label=TRUE) -> t4
+
+
+colnames(t4)[2] <- "Site"
+t4_all <- merge(t4, t_site, by.x="Site",by.y="row.names",all.y=TRUE)
+t4_all[1,c(3,4)] <- table(recrver1$BioFin_BaseUrineCol_v1r0)
+t4_all1 <- t4_all[c(4:7,2,3,8:10,1),c(1,4,3,5)]
+
+##Table 4
+
+Table4_mwcol <- recrver1 %>% dplyr::select(Site, BioFin_BaseMWCol_v1r0 )  %>% tbl_cross(
+  row = Site,
+  col = BioFin_BaseMWCol_v1r0,
+  percent = "row",
+  digits=c(0,2),
+  label=list(Site~"Site", BioFin_BaseMWCol_v1r0 ~ "Baseline Mouthwash Collections" ),
+  missing="ifany",
+  missing_text="Unknown") %>%
+  #bold_labels() %>%
+  #italicize_levels() %>% 
+  modify_header() %>%
+  modify_caption("Table 4. Percent (and number) of verified participants with baseline mouthwash collected by site") %>%
+  as_kable_extra(escape = FALSE, addtl_fmt = TRUE)
+
+
+#otption 2
+explanatory = "Site"
+dependent = 'BioFin_BaseMWCol_v1r0'
+recrver1 = apply_labels(recrver1,
+                        Site = "Site",
+                        BioFin_BaseMWCol_v1r0 = "Baseline Mouthwash collected"
+)
+recrver1 %>%
+  summary_factorlist(dependent, explanatory, 
+                     p=FALSE, add_dependent_label=TRUE) -> t3
+colnames(t3)[2] <- "Site"
+
+t3_all <- merge(t3, t_site, by.x="Site",by.y="row.names",all.y=TRUE)
+t3_all[1,c(3,4)] <- table(recrver1$BioFin_BaseMWCol_v1r0)
+t3_all1 <- t3_all[,-c(2,6:7)]
+colnames(t3_all1)[4] <- "Total"
+#  t3$Site <- t3$Site %>% replace_na('Total')
+#t3$'Any biospecimen Collected'[t3$'Any Mouthwash Collected' == ''] <- "0 (0.0)"
+
+#Table 5.
+#colnames(biosetting_all) <- c("Collection Setting","Blood collected", "Urine collected", "Mouthwash collected")
+setting <- recrvar.bio[grepl("Setting",recrvar.bio$Variable.Label),]$column_name
+settings <- c("BL_BioSpm_BloodSetting_v1r0","BL_BioSpm_UrineSetting_v1r0","BL_BioSpm_MWSetting_v1r0")
+bio <- c("d_878865966","d_167958071","d_684635302")
+col_set <- list()
+for (i in 1:3){
+tmp <-eval(parse(text=paste("pct_tb(recrver1$",settings[i],",recrver1$",bio[i],")",sep="")))
+tmp <- tmp %>% select(contains("n_pct_Any")) %>% 
+  mutate(Settings = trimws(rownames(tmp)))
+col_set[[i]] <- tmp 
+}
+biosettings <- col_set %>% reduce(full_join,by="Settings")
+biosettings$`n_pct_Any blood collected` <- ifelse(biosettings$Settings=="Total",
+   sapply(strsplit(biosettings$`n_pct_Any blood collected`, " "),head,1), biosettings$`n_pct_Any blood collected`)
+
+biosettings$`n_pct_Any urine collected` <- ifelse(biosettings$Settings=="Total",  sapply(strsplit(biosettings$`n_pct_Any urine collected`, " "),head,1), biosettings$`n_pct_Any urine collected`)
+  
+biosettings$`n_pct_Any mouthwash collected` <- ifelse(biosettings$Settings=="Total", sapply(strsplit(biosettings$`n_pct_Any mouthwash collected`, " "),head,1),  ifelse(!is.na(biosettings$`n_pct_Any mouthwash collected`), biosettings$`n_pct_Any mouthwash collected`, "0 (0 %)"))
+
+biosettings[4,c(1:4)] <- c("0 (0 %)", "Home",  "0 (0 %)", "0 (0 %)")
+
+biosettings <- biosettings[order(biosettings$Settings),c(2,1,3,4)] 
+colnames(biosettings)[2:4] <- gsub("n_pct_","",colnames(biosettings)[2:4])
+
+###Table 6 Baseline biospecimen collection status among verified participants research collection
+levels(recrver1$BioFin_BaseBloodCol_v1r0)
+
+biocol <- recrver1 %>% group_by(BioFin_BaseBloodCol_v1r0,BioFin_BaseUrineCol_v1r0,BioFin_BaseMWCol_v1r0) %>% dplyr::tally() 
+total <- nrow(recrver1)
+biocol$pct <- round(100*biocol$n/nrow(recrver1),digits=2)
+biocol$cumcount <- cumsum(biocol$n)
+biocol$cumpct <- round(100*cumsum(biocol$n)/nrow(recrver1),digits=2)
+
+biocol <- apply_labels(biocol, 
+                       pct="percentage of Total verified %",
+                       cumcount="cumulative counts of verified",
+                       cumpct="cumulative percentage")
+
+print(biocol)
+
+
+###Table 6. by site
+biocol.site <- list()
+recrver1$Site <- droplevels(recrver1$Site)
+for(site in unique(recrver1$Site)){
+  
+  site.sub <- recrver1 %>% filter(Site==site) %>% 
+    group_by(Site,BioFin_BaseBloodCol_v1r0,BioFin_BaseUrineCol_v1r0,BioFin_BaseMWCol_v1r0) %>% dplyr::tally() 
+  total <- as.numeric(nrow(recrver1[which(recrver1$Site==site),]))
+  site.sub$pct <- round(100*site.sub$n/total,digits=2)
+  site.sub$cumcount <- cumsum(site.sub$n)
+  site.sub$cumpct <- round(100*cumsum(site.sub$n)/total,digits=2)
+  biocol.site[[site]] <- site.sub
+}
+
+
+##Fig 1(table6)
+
+recrver1 <- recrver1 %>% mutate(BiospmCols_v1r0 = 
+                                  case_when((recrver1$d_684635302 == 353358909 & recrver1$d_878865966 == 353358909 & recrver1$d_167958071 == 353358909) ~ "All blood, urine and mouthwash",
+                                            (recrver1$d_684635302 == 353358909 & recrver1$d_878865966 == 353358909 & recrver1$d_167958071 == 104430631) ~ "Mouthwash and blood, no urine",
+                                            (recrver1$d_684635302 == 353358909 & recrver1$d_878865966 == 104430631 & recrver1$d_167958071 == 104430631) ~ "Only mouthwash,no blood or urine",
+                                            (recrver1$d_684635302 == 104430631 & recrver1$d_878865966 == 353358909 & recrver1$d_167958071 == 353358909) ~ "Blood and urine, no mouthwash",
+                                            (recrver1$d_684635302 == 104430631 & recrver1$d_878865966 == 104430631 & recrver1$d_167958071 == 353358909) ~ "Only urine, no blood or mouthwash",
+                                            (recrver1$d_684635302 == 353358909 & recrver1$d_878865966 == 104430631 & recrver1$d_167958071 == 353358909) ~ "Mouthwash and urine, no blood",
+                                            (recrver1$d_684635302 == 104430631 & recrver1$d_878865966 == 353358909 & recrver1$d_167958071 == 104430631) ~ "Only blood, no urine or mouthwash",
+                                            ((recrver1$d_684635302 == 104430631 | is.na(recrver1$d_684635302)) & (recrver1$d_878865966 == 104430631 | is.na(recrver1$d_878865966)) & (is.na(recrver1$d_167958071) |recrver1$d_167958071 == 104430631)) ~ "No any biospecimen collections"))
+
+table(as.character(recrver1$d_684635302))
+
+
+table_colspm <- recrver1[which(recrver1$d_684635302 == 353358909 | recrver1$d_878865966 == 353358909 | recrver1$d_167958071 == 353358909),] %>%
+        group_by(BiospmCols_v1r0) %>% dplyr::summarise(count=n()) 
+table_colspm$count_pct <- paste0(table_colspm$count," (", round(100*table_colspm$count/sum(table_colspm$count),digits=2),"%)")
+table_colspm <- table_colspm[order(-table_colspm$count),]
+table_colspm$midpoint = cumsum(table_colspm$count) - (table_colspm$count / 2)
+table_colspm$midpoint <- ifelse(table_colspm$count>7, table_colspm$count, cumsum(table_colspm$count) - (table_colspm$count / 2))
+table_colspm$midpoint
+ggplot(table_colspm, aes(x = "", y = count, fill = BiospmCols_v1r0)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y", start = 0) +
+  scale_fill_manual(values = c("light blue", "Red", "Green", "Orange", "Pink", "Purple","Yellow")) +
+  scale_colour_brewer(palette = "Set1") +
+  labs(x = "", y = "", title = "Percent (and number) of Biospecimen Collection Completion among baseline collections",
+       fill = "BiospmCols_v1r0") + 
+  geom_text(aes(x=1.6, label=count_pct),
+            position =  position_stack(vjust=0.6), size=3) +
+  geom_text(aes(x = 1.3, y = midpoint , label = count_pct), color="black",
+            fontface = "bold") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.title = element_text(hjust = 0.5, face="bold", size = 10)) 
+
+#label outside
+ggplot(table_colspm, aes(x = "", y = count, fill = BiospmCols_v1r0)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y", start = 0) +
+  scale_fill_manual(values = c("light blue", "Red", "Green", "Orange", "Pink", "Purple","Yellow")) +
+  #scale_colour_brewer(palette = "Set1") +
+  labs(x = "", y = "", title = "Percent (and number) of Biospecimen Collection Completion among baseline collections",
+       fill = "BiospmCols_v1r0") + 
+  geom_text(aes(x=1.6, label=count_pct),
+            position =  position_stack(vjust=0.6), size=3, color="black",fontface = "bold") +
+  theme(panel.background = element_blank(),
+        plot.title = element_text(hjust = 0.0, face="bold"), 
+        axis.ticks = element_blank(),axis.text = element_blank(),
+        legend.title = element_text(hjust = 0.5, face="bold", size = 10))
+
+
+###for the biospecimen data:collections, deviation, and nocollections# ###Table 14. Number of blood, urine, and mouthwash collected by collection setting
+pct_tb <- function(x,y){
+  table1 <- CrossTable(x,y, prop.t=FALSE, prop.r=FALSE, prop.c=TRUE,chisq=FALSE)
+  pct <- as.data.frame(cbind(table1$prop.row,table1$t))
+  if(ncol(pct)==2){
+    total <- as.numeric(sum(pct[,2]))
+    pct[nrow(pct)+1,c(1:2)] <- c(1,total)
+    rownames(pct)[nrow(pct)] <- "Total"
+    colnames(pct)[1] <- paste0("pct_",colnames(pct)[1])
+    colnames(pct)[2] <- paste0("n_",colnames(pct)[2])
+    
+  }
+  else  if(ncol(pct)>2 ){
+    total <- as.numeric(sum(pct[,3] + pct[,4]))
+    pct[nrow(pct)+1,c(1:4)] <- c(sum(pct[,3])/total,sum(pct[,4])/total,sum(pct[,3]),sum(pct[,4]))
+    rownames(pct)[nrow(pct)] <- "Total"
+    colnames(pct)[c(1:2)] <- paste0("pct_",colnames(pct[c(1:2)]))
+    colnames(pct)[c(3:4)] <- paste0("n_",colnames(pct)[c(3:4)])
+    
+    pct[,5] <- paste0(format(pct[,3],big.mark=","), " (",round(100*pct[,1],2), "%)")
+    pct[,6] <- paste0(format(pct[,4],big.mark=","), " (",round(100*pct[,2],2), "%)") 
+    colnames(pct)[5] <- paste0("n_",colnames(pct)[1])
+    colnames(pct)[6] <- paste0("n_",colnames(pct)[2])
+  }
+  return(pct)
+}
+
+###Tables on the biospecimen samples
+
+##Table6_bysite. the research blood collection completions
+##for blood collection based on the biospecimen data individually
+#biospe <- read.csv("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_biospecimen_2023-02-06.csv")
+
+biospe<- expss::apply_labels(biospe,d_827220437 = "Site",#RcrtES_Site_v1r0
+                     d_827220437 = c("HealthPartners"= 531629870, "Henry Ford Health System"=548392715,"Marshfield Clinic Health System" = 303349821,"Sanford Health" = 657167265, "University of Chicago Medicine" = 809703864, "Kaiser Permanente Colorado" = 125001209,"Kaiser Permanente Georgia" = 327912200,"Kaiser Permanente Hawaii" = 300267574,"Kaiser Permanente Northwest" = 452412599,"National Cancer Institute" = 517700004,"National Cancer Institute" = 13,"Other" = 181769837))
+
+biospe$Site <- factor(biospe$d_827220437, levels= c("HealthPartners", "Henry Ford Health System","Marshfield Clinic Health System","Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado","Kaiser Permanente Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest")) 
+
+#125001209 300267574 303349821 327912200 452412599 531629870 548392715 657167265 809703864 
+#        2         2       329         1         4       417       169       200       314 
+biospe <- biospe %>% arrange(Site)
+
+tubes <- dd[grepl(" Tube ",dd$`Variable Label`),]
+tubes[grepl("00", tubes$`Variable Name`),]
+###         CID         Variable Label    Variable Name
+
+# 2: 299553921 Serum Separator Tube 1 BioCol_0001_v1r0
+# 9: 703954371 Serum Separator Tube 2 BioCol_0002_v1r0
+# 3: 376960806 Serum Separator Tube 3 BioCol_0011_v1r0
+# 1: 232343615 Serum Separator Tube 4 BioCol_0012_v1r0
+# 5: 589588440 Serum Separator Tube 5 BioCol_0021_v1r0
+# 4: 454453939            EDTA Tube 1 BioCol_0004_v1r0
+# 7: 677469051            EDTA Tube 2 BioCol_0014_v1r0
+# 8: 683613884            EDTA Tube 3 BioCol_0024_v1r0
+# 10: 838567176         Heparin Tube 1 BioCol_0003_v1r0
+# 11: 958646668         Heparin Tube 2 BioCol_0013_v1r0
+# 6: 652357376             ACD Tube 1 BioCol_0005_v1r0
+
+bld.ls <- c("d_299553921","d_703954371","d_454453939","d_838567176","d_652357376","d_376960806","d_232343615","d_589588440","d_677469051", "d_683613884","d_958646668") #blood tube types CIDs: the first 5 tubes are research, add the rest are clinical
+
+#bld.ls <- c("d_299553921","d_703954371","d_454453939","d_838567176","d_652357376") #blood tube types CIDs research collections
+
+##research collection tubes
+ ##biospeciment tube type CIDs
+
+tubeid <- grep("d_825582494", names(biospe), value=TRUE) #tube ID
+deviation <- grep("d_678857215",names(biospe),value=TRUE) 
+colid <- grep("d_593843561", names(biospe), value=TRUE) #collected yes/no
+discard <- grep("d_762124027",names(biospe),value=TRUE) #discard yes/no
+biodiscard <- biospe[,(which(names(biospe) %in% discard))]
+#eval(parse(text=paste("varlong <-grep(",\"d_593843561\",",names(biospe),value=TRUE)",sep="")))
+###Table 6. Percent (and number) of Blood Completeness among baseline collections
+
+
+###reshape the data: binary variables for tube collections: collected(y/n),deviation(y/n), tubeID, discarded (y/n), notcollection reasons:5,
+###notcollection Notes (338286049), deviation notes (536710547)
+
+
+biospe$blddev <-0 #blood deviations
+biospe$bldcol <- 0 #blood collections
+biospe$blddid <- 0 #discarded
+for(i in 1:length(bld.ls)){
+  
+  bldcol <- ifelse(biospe[,paste(bld.ls[i],"d_593843561",sep="_")] == 104430631 | is.na(biospe[,paste(bld.ls[i],"d_593843561",sep="_")]),0,1)  ##for tube collected
+  
+  blddev <- ifelse(biospe[,paste(bld.ls[i],"d_678857215",sep="_")]==104430631 | is.na(biospe[,paste(bld.ls[i],"d_678857215",sep="_")]),0,1) #for tube deviations yes/no
+  
+  blddid <- ifelse(biospe[,paste(bld.ls[i],"d_762124027",sep="_")]==104430631 | is.na(biospe[,paste(bld.ls[i],"d_762124027",sep="_")]),0,1)
+  
+  biospe$blddev <- biospe$blddev+blddev
+  biospe$bldcol <- bldcol + biospe$bldcol ###to check collection
+  biospe$blddid <- biospe$blddid+blddid  
+  # k the completion of the blood collection of 5 types
+  
+}
+table(biospe$d_650516960,biospe$bldcol)
+
+
+biospe <- biospe %>% mutate(bloodcomplete = ifelse((d_650516960==534621077 & bldcol == 5) | (d_650516960==664882224 & bldcol == 11), "Blood.Completion" ,#blood collection completion
+                                          ifelse( (d_650516960==534621077 & (bldcol<5 & bldcol>0)) | (d_650516960==664882224 & (bldcol <  11 & bldcol < 0)),"Blood.Incompleted","NoBlood")),
+                            Urine_col = ifelse(d_973670172_d_593843561==353358909, 1, ifelse(d_973670172_d_593843561==104430631,0,0)),
+                            MW_col = ifelse(d_143615646_d_593843561==353358909,1,ifelse(d_143615646_d_593843561==104430631,0,0)),
+                            biocol_Setting = case_when(d_650516960==534621077  ~"Research",
+                                                        d_650516960==664882224 ~ "Clinical",
+                                                         d_650516960 ==103209024 ~ "Home")) 
+
+
+biospe$Biospe_col <- biospe$bldcol + biospe$Urine_col + biospe$MW_col    
+
+biospe$BaseBLDCol <-ifelse(biospe$bldcol>0,1,ifelse(is.na(biospe$bldcol),NA,0)) #blood collection Yes/No
+
+
+biospe[duplicated(biospe$Connect_ID),]$Connect_ID
+#[1] 2055639272 3654414289 4467774615 5537363912 6258863606 7574078898 8261536089 #stg biospecimen data
+# [1] 1219400073 1397465779 2310991421 2513005250 2699722546 4289925849 7154937817 8087190864
+
+###to get the summary collection data per person on urine, blood, and mouthwash collections for each biospecimen collection settings
+#tube_col <- biospe %>% dplyr::select(Connect_ID, d_678166505,d_951355211, d_410912345,d_650516960, d_556788178,grep("593843561",colnames(biospe)),bldcol)
+#tube_col <- tube_col %>% group_by(as.character(Connect_ID))  %>% arrange(bldcol,d_973670172_d_593843561,d_143615646_d_593843561) %>% slice(n())
+
+#biospe1 <- biospe %>% group_by(as.character(Connect_ID)) %>% arrange(desc(Biospe_col)) %>% slice(n())
+tube_col <- biospe  %>% group_by(as.character(Connect_ID),Site,d_650516960) %>% 
+  dplyr::summarise(bldcol_max = max(bldcol,na.rm=TRUE),
+                   Urine_col_max= max(Urine_col,na.rm=TRUE),
+                   MW_col_max=max(MW_col,na.rm=TRUE),
+                   d_973670172_d_593843561_max=max(d_973670172_d_593843561,na.rm=TRUE),
+                   d_143615646_d_593843561_max = max(d_143615646_d_593843561,na.rm=TRUE),
+                   d_410912345_max=max(d_410912345,na.rm=TRUE),
+                   collection.tm =max(as.POSIXct(ymd_hms(d_556788178)),na.rm=TRUE),
+                   schedulecol.tm =min(as.POSIXct(ymd_hms(d_678166505)),na.rm=TRUE))
+table(tube_col$d_650516960)
+#534621077 664882224 
+#     1421        10 
+tube_col$Connect_ID <- as.numeric(tube_col$`as.character(Connect_ID)`)
+#tube_col[duplicated(tube_col$Connect_ID),]$Connect_ID #only 1 2310991421
+
+tube_research <- tube_col %>% filter(d_650516960==534621077) %>%
+  mutate(bld.complt = ifelse(bldcol_max==5,"BloodCompletion",ifelse(bldcol_max==0, "NoBlood","BloodIncomplet")))
+
+tube_research$Site <- droplevels(tube_research$Site)
+
+
+table.bldcol <- ctable(tube_research$Site,tube_research$bld.complt)
+
+bldcol_research <- as.data.frame(cbind(table.bldcol$cross_table,table.bldcol$proportions))
+
+bldcol_research$Site <-trimws(rownames(bldcol_research))
+                             
+bldcol_research$n_pct_BloodCompletion <- ifelse(!grepl("Total",rownames(bldcol_research)),  paste(format(bldcol_research[,1],big.mark=","),"(", round(100*bldcol_research[,5],2),"%)",sep=" "), format(bldcol_research[,1],big.mark="," ))
+
+bldcol_research$n_pct_BloodInompletion = ifelse(!grepl("Total",rownames(bldcol_research)),  paste(format(bldcol_research[,2],big.mark=","),"(", round(100*bldcol_research[,6],2),"%)",sep=" "), format(bldcol_research[,2],big.mark="," ))
+
+bldcol_research$n_pct_NoBlood = ifelse(!grepl("Total",rownames(bldcol_research)),  paste(format(bldcol_research[,3],big.mark=","),"(", round(100*bldcol_research[,7],2),"%)",sep=" "), format(bldcol_research[,3],big.mark="," ))
+         
+bldcol_research1 <- bldcol_research[,c(9:12,4)]
+  
+#table for Blood completeness among baseline clinical blood collections
+#c("2513005250","2699722546","4289925849","7154937817","8087190864")),c("Connect_ID","d_410912345_max","bldcol_max","d_143615646_d_593843561_max","d_973670172_d_593843561_max")]
+pct_n <- function(x,y){ paste0(x,"( ", round(100*y,2), " %)")}
+
+n_pct_table <- function(x,y){
+  #x<-clinicnotes.notcol$Site
+  #y<-clinicnotes.notcol$notcol.notes
+  ctable<- CrossTable(x,y)
+count <- as.data.frame.matrix(ctable$t)
+perc <- as.data.frame.matrix(ctable$prop.col)
+
+n<- as.numeric(length(levels(x)))
+
+m <- as.numeric(length(levels(y)))
+
+
+tb_combo <- array(pct_n(ctable$t,ctable$prop.col),dim=c(n,m)) 
+
+  tb_combo <- as.data.frame(tb_combo)
+  colnames(tb_combo) <- colnames(count)
+  
+  total <- sum(count)
+  count$Total <- apply(count,1,sum)
+  tb_combo$Total <- paste0(count$Total, "( ", round(100*(count$Total)/total,2), " %)")
+  
+  tb_combo$Site <- rownames(count)
+
+  tb_combo[(n+1),c(1:(m+1))] <- as.character(apply(count,2,sum))
+  tb_combo$Site[is.na(tb_combo$Site)] <- replace_na("Total")  
+
+  return(tb_combo)
+}
+tube_clinic <- tube_col %>% filter(d_650516960==664882224 & grepl("Kaiser",Site))%>% mutate(Site=droplevels(Site),
+                                                                     bldcol_max=as.factor(bldcol_max))
+
+tube_clinic$bldcol_tubes <- factor(tube_clinic$bldcol_max,levels=c(1:11))
+tube_clinic$bldcol_tubes <- droplevels(tube_clinic$bldcol_tubes)
+#clinic.bldcol <-CrossTable(tube_clinic$Site,as.factor(tube_clinic$bldcol_tubes))
+
+
+bldcol_clinic <- n_pct_table(tube_clinic$Site,as.factor(tube_clinic$bldcol_tubes))
+                             
+# for (i in 1:length(levels(tube_clinic$bldcol_tubes))){
+#   bldcol_clinic[,i+24] <- ifelse(!grepl("Total",rownames(bldcol_clinic)), paste(format(bldcol_clinic[,i],big.mark=","),"(",round(100*bldcol_clinic[,12+i], 2),"%)",sep=" "), 
+#   format(bldcol_clinic[,i],big.mark="," ))
+# colnames(bldcol_clinic)[i+24] <- paste0("Tube ",i)  
+# }
+
+bldcol_clinic$"less.than.7" <- ifelse(!grepl("Total",bldcol_clinic$Site),"0 ( 0.00%)","0")
+bldcol_clinic$`11` <- bldcol_clinic$"less.than.7"
+
+#bldcol_clinic1$TubeNo <- trimws(rownames(bldcol_clinic1))
+
+##Table 8 Baseline Blood Collected Status in KP data vs Connect Biospecimen Dashboard Data
+recr_clin <- recrver1 %>% dplyr::filter(d_173836415_d_266600170_d_592099155 == 664882224 | d_173836415_d_266600170_d_718172863  == 664882224) %>%
+   mutate(BL_BioClin_DBUrineRRL_v1r0=ifelse(d_173836415_d_266600170_d_210921343==104430631 | is.na(d_173836415_d_266600170_d_210921343), "No","Yes"),
+          BioClin_SiteUrineColl_v1r0=ifelse(d_173836415_d_266600170_d_786930107==104430631 | is.na(d_173836415_d_266600170_d_786930107), "No","Yes"),
+          BL_BioClin_DBBloodRRL_v1r0=ifelse(d_173836415_d_266600170_d_534041351==104430631 | is.na(d_173836415_d_266600170_d_534041351), "No","Yes"),
+          BioClin_SiteBloodColl_v1r0=ifelse(d_173836415_d_266600170_d_693370086==104430631 | is.na(d_173836415_d_266600170_d_693370086), "No","Yes")
+   )
+
+Table8_BldCli <- recr_clin %>% 
+  dplyr::select(BL_BioClin_DBBloodRRL_v1r0, BioClin_SiteBloodColl_v1r0 )  %>% 
+  mutate(BL_BioClin_DBBloodRRL_v1r0= factor(BL_BioClin_DBBloodRRL_v1r0,levels=c("Yes","No")),
+         BioClin_SiteBloodColl_v1r0=factor(BioClin_SiteBloodColl_v1r0,levels=c("Yes","No"))) %>%
+  tbl_cross(
+    col = BL_BioClin_DBBloodRRL_v1r0,
+    row = BioClin_SiteBloodColl_v1r0,
+    percent = "cell",
+    label=list(BL_BioClin_DBBloodRRL_v1r0~"Any Blood Collected (Data from Dashboard)", BioClin_SiteBloodColl_v1r0 ~ 'Any Blood Collected (Data Sent by KP)'),
+    missing="ifany",
+    missing_text="0",
+    digits=c(0,2),
+    margin_text="Total") 
+
+Table8_BldCli[["table_body"]]$stat_0 <- sapply(strsplit(Table8_BldCli[["table_body"]]$stat_0," "),"[",1) 
+Table8_BldCli <- Table8_BldCli %>%
+  #bold_labels() %>%
+  #italicize_levels() %>% 
+  modify_header() %>%
+  modify_caption("Table 9. Baseline Blood Collected Status in KP data vs Connect Biospecimen Dashboard Data") %>%
+  as_kable_extra()
+
+Table9_UrineCli <- recr_clin %>% 
+  dplyr::select(BL_BioClin_DBUrineRRL_v1r0, BioClin_SiteUrineColl_v1r0 ) %>% 
+  mutate(BL_BioClin_DBUrineRRL_v1r0= factor(BL_BioClin_DBUrineRRL_v1r0,levels=c("Yes","No")),
+         BioClin_SiteUrineColl_v1r0= factor(BioClin_SiteUrineColl_v1r0,levels=c("Yes","No")))  %>% 
+  tbl_cross(
+    col = BL_BioClin_DBUrineRRL_v1r0,
+    row = BioClin_SiteUrineColl_v1r0,
+    percent = "cell",
+    digits= c(0,2),
+    label=list(BL_BioClin_DBUrineRRL_v1r0~"Any Urine Collected (Data from Dashboard)", BioClin_SiteUrineColl_v1r0 ~ 'Any Urine Collected (Data Sent by KP'),
+    missing="ifany",
+    missing_text="0",
+    margin_text="Total") 
+
+Table9_UrineCli[["table_body"]]$stat_0 <- sapply(strsplit(Table9_UrineCli[["table_body"]]$stat_0," "),"[",1) 
+Table9_UrineCli <- Table9_UrineCli%>%
+  #bold_labels() %>%
+  #italicize_levels() %>% 
+  modify_header() %>%
+  modify_caption("Table 10. Baseline Urine Collected Status in KP data vs Connect Biospecimen Dashborad data") %>%
+  as_kable_extra()
+
+#Table 11. Participants who checked in for a baseline biospecimen visit but did not give any samples
+dd[grepl("BioChk",dd$`Variable Name`),]
+#          CID              Variable Label        Variable Name
+# 1: 135591601           Check-In Complete BioChk_Complete_v1r0
+# 2: 840048338 Date/Time Check-In Complete     BioChk_Time_v1r0
+
+recr_bio <- merge(recrver1,tube_col,by="Connect_ID")
+bio_checkin_resh <- recr_bio  %>% filter(!is.na(d_331584571_d_266600170_d_840048338) & d_650516960==534621077) %>% select(BiospeCollection ) %>% tbl_summary()
+table(bio_checkin_resh$BiospeCollection)
+
+#Table 12 Number (and percent) of tubes with any deviation by site
+#dd[grepl("BioCol_00",dd$`Variable Name`),] %>% arrange(`Variable Label`)
+#          CID                          Variable Label    Variable Name
+#  1: 143615646                               Mouthwash BioCol_0007_v1r0
+#  2: 223999569            Biohazard Bag (mouthwash) ID BioCol_0009_v1r0
+#  3: 232343615                  Serum Separator Tube 4 BioCol_0012_v1r0
+#  4: 299553921                  Serum Separator Tube 1 BioCol_0001_v1r0
+#  5: 376960806                  Serum Separator Tube 3 BioCol_0011_v1r0
+#  6: 454453939                             EDTA Tube 1 BioCol_0004_v1r0
+#  7: 589588440                  Serum Separator Tube 5 BioCol_0021_v1r0
+#  8: 652357376                              ACD Tube 1 BioCol_0005_v1r0
+#  9: 677469051                             EDTA Tube 2 BioCol_0014_v1r0
+# 10: 683613884                             EDTA Tube 3 BioCol_0024_v1r0
+# 11: 703954371                  Serum Separator Tube 2 BioCol_0002_v1r0
+# 12: 787237543 Biohazard Bag (Blood or Blood/Urine) ID BioCol_0008_v1r0
+# 13: 838567176                          Heparin Tube 1 BioCol_0003_v1r0
+# 14: 958646668                          Heparin Tube 2 BioCol_0013_v1r0
+# 15: 973670172                                   Urine BioCol_0006_v1r0
+tubes <- dd[which(grepl("BioCol_00",as.character(dd$`Variable Name`)) & !grepl("Biohazard Bag", dd$`Variable Label`)),] 
+tubes <- tubes[order(tubes$"Variable Name"),]
+
+tube.ls <- paste0("d_", trimws(paste(tubes[which(grepl("00", tubes$`Variable Name`)),]$CID,collapes="")))
+# [1] "d_299553921" "d_703954371" "d_838567176" "d_454453939" "d_652357376" "d_973670172" "d_143615646"
+# [8] "d_376960806" "d_232343615" "d_958646668" "d_677469051" "d_589588440" "d_683613884"
+biospe$tubedev <-0 #biospecimen deviations
+biospe$tubecol <- 0 #tube collections
+biospe$tubedid <- 0 #tube discarded
+for(i in 1:length(tube.ls)){
+  
+  tubecol <- ifelse(biospe[,paste(tube.ls[i],"d_593843561",sep="_")] == 104430631 | is.na(biospe[,paste(tube.ls[i],"d_593843561",sep="_")]),0,1)  ##for tube collected
+  
+  tubedev <- ifelse(biospe[,paste(tube.ls[i],"d_678857215",sep="_")]==104430631 | is.na(biospe[,paste(tube.ls[i],"d_678857215",sep="_")]),0,1) #for tube deviations yes/no
+  
+  tubedid <- ifelse(biospe[,paste(tube.ls[i],"d_762124027",sep="_")]==104430631 | is.na(biospe[,paste(tube.ls[i],"d_762124027",sep="_")]),0,1)
+  
+  biospe$tubedev <- biospe$tubedev+tubedev
+  biospe$tubecol <- tubecol + biospe$tubecol ###to check collection
+  biospe$tubedid <- biospe$tubedid+tubedid  
+  # k the completion of the 13 tube collections
+}
+
+table(biospe$tubecol)
+table(biospe$tubedev)
+
+biospe$d_827220437 <- as.numeric(biospe$d_827220437)
+biospe <- apply_labels(biospe,d_827220437 = "Site",#RcrtES_Site_v1r0
+                       d_827220437 = c("HealthPartners"= 531629870, "Henry Ford Health System"=548392715, "Kaiser Permanente Colorado" = 125001209,
+                                      "Kaiser Permanente Georgia" = 327912200,"Kaiser Permanente Hawaii" = 300267574,"Kaiser Permanente Northwest" = 452412599,
+                                      "Marshfield Clinic Health System" = 303349821,"Sanford Health" = 657167265, "University of Chicago Medicine" = 809703864,
+                                      "National Cancer Institute" = 517700004,"National Cancer Institute" = 13,"Other" = 181769837))
+
+
+biospe$tube_nodev <- biospe$tubecol-biospe$tubedev
+total1 <- sum(biospe$tubedev) 
+total2 <- sum(biospe$tube_nodev) 
+
+tube_dev <- as.data.frame(aggregate( biospe$tubedev,                # Specify data column[,c("tubedev","tube_nodev")]
+                                     by = list(biospe$Site),              # Specify group indicator
+                                     FUN = sum))
+tube_nodev <- as.data.frame(aggregate( biospe$tube_nodev,                # Specify data column[,c("tubedev","tube_nodev")]
+                                     by = list(biospe$Site),              # Specify group indicator
+                                     FUN = sum))
+
+Table17 <- merge(tube_dev,tube_nodev,by="row.names")
+Table17 <- Table17[,c(2,3,5)]
+
+Table17$Total <- Table17[,2]+Table17[,3]
+Table17$dev_n_pct <- ifelse(Table17[,2] >0, paste0(format(Table17[,2],big.mark=",")," (", round(100*Table17[,2]/Table17$Total, 2)," %)"), "0 (0 %)")
+Table17$nodev_n_pct <- ifelse(Table17[,3] >0, paste0(format(Table17[,3],big.mark=",")," (",  round(100*Table17[,3]/Table17$Total,2), " %)"), "0 (0 %)")
+Table17$Total <- format(Table17$Total, big.mark=",")
+
+Table17[10,c(1:6)] <- c("Total",total1, total2,format(sum(biospe$tubecol),big.mark=","),format(total1,big.mark=","),format(total2,big.mark=","))
+Table17 <- Table17 %>% mutate(Site = ifelse(is.na(Group.1.x), "Total",  as.character(Group.1.x))) ###to replace NA in the factor variable
+
+#Table 12. Number of deviations by biospecimen type and by tube type 
+#keep this table for CCC version but remove from version that we are sharing with the sites
+
+dev_tube <- NULL
+for (i in 1:length(tube.ls)){
+  
+  id <- paste(tube.ls[i],"d_825582494",sep="_")
+  tube <- paste(tube.ls[i],"d_678857215",sep="_")
+  #note <- paste(tube.ls[i],"d_536710547",sep="_")
+  tube_dev <- paste(tube.ls[i],"d_248868659", sep="_")
+  deviation <- grep(tube_dev,colnames(biospe),value=TRUE)
+  tmp <- as.data.frame(biospe[,which(colnames(biospe) %in% c(id,tube,deviation))] )
+  tmp <- tmp[which(!is.na(tmp[,(colnames(tmp) == id)])),]
+  
+    dev_long <- melt(tmp,
+                   id.vars=c(id,tube), 
+                   measure.vars=deviation,
+                   variable.name="dev_type",
+                   value.name="deviation")
+    
+    
+  colnames(dev_long)[grep("d_678857215",names(dev_long))] <- "d_678857215"
+  colnames(dev_long)[grep("d_825582494",names(dev_long))] <- "TubeID"
+  #colnames(dev_long)[grep("d_536710547",names(dev_long))] <- "d_536710547"
+  
+  dev_long <- dev_long[complete.cases(dev_long[,c("TubeID","d_678857215","dev_type","deviation")]),]
+  #colnames(dev_long)[1] <- "d_678857215"
+  #dev_long$d_536710547 <- as.character(dev_long$d_536710547)
+  
+  #dev_tube[[i]] <- dev_long
+  dev_tube <- dplyr::bind_rows(dev_tube,dev_long)
+  #print(c(i,bios.ls[i]))
+}  #329
+
+
+   dev_tube1   <- dev_tube %>% filter(d_678857215 ==353358909 & deviation == 353358909)  %>%  
+     mutate(biospecimen=ifelse(grepl("d_973670172",dev_type), "urine",
+                                  ifelse(grepl("d_143615646",dev_type),"Mouthwash","blood")),
+            tube_type = case_when(grepl("d_973670172",dev_type) ~ "Urine Tube1",
+                                  grepl("d_143615646",dev_type) ~ "MM Tube1",
+                                  grepl("d_299553921",dev_type) ~ "SS Tube1",
+                                  grepl("d_703954371",dev_type) ~ "SS Tube2",
+                                  grepl("d_454453939",dev_type) ~ "EDTA Tube1",
+                                  grepl("d_838567176",dev_type) ~ "Heparin Tube1",
+                                  grepl("d_652357376",dev_type) ~ "ACD Tube1",
+                                  grepl("d_677469051",dev_type) ~ "EDTA Tube2",
+                                  grepl("d_683613884",dev_type) ~ "EDTA Tube3",
+                                  grepl("d_376960806",dev_type) ~ "SS Tube3",
+                                  grepl("d_232343625",dev_type) ~ "SS Tube4",
+                                  grepl("d_589588440",dev_type) ~ "SS Tube5",
+                                  grepl("d_958646668",dev_type) ~ "Heparin Tube2"),
+            
+              deviationnotes =case_when(sapply(strsplit(as.character(dev_type),"d_"),tail,1) =="102695484" ~ "Deviation Clot < 30min",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="242307474" ~ "Hemolyzed", 
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="283900611" ~ "Mislabel Resolved",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="313097539" ~ "Outside Contamated",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="453343022" ~ "Other",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="472864016" ~ "Broken", 
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="550088682" ~ "Temparture Too Low",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="561005927" ~ "Cent Low",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="635875253" ~ "Brokne Gel",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="654002184" ~ "Centrifuge Too Long",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="684617815" ~ "MisLabled Discard",
+                  sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="690540566" ~"Tempature Too High",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="728366619" ~"Low Volume-(tube/container partially filled but still usable)",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="742806035" ~"MW < 30s",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="757246707" ~"Leak/Spilled",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="777486216" ~"Tube Size",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="810960823" ~"Discard",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="861162895" ~"Cent High",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="912088602" ~"Clot > 2h",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="937362785" ~"Centrifuge Too Short",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="956345366" ~"Insufficient Volume",
+              sapply(strsplit(as.character(dev_type),"d_"),"[[",4) =="982885431" ~ "Not Found"))
+
+notcol_tubes <- colnames(biospe)[grepl("883732523",colnames(biospe))] #7
+col_tubes <- colnames(biospe)[grepl("d_593843561",colnames(biospe))] #15
+dev_tubes <- colnames(biospe)[grepl("d_678857215",colnames(biospe))] #13
+
+notcol.ls <- sapply(strsplit(notcol_tubes, "_d"),"[[",1)
+   notcol_tube <- NULL
+   tubenotcol.ls <-list()
+ 
+   for (i in 1:length(notcol.ls)){
+     
+     tubecol <- paste(notcol.ls[i],"d_593843561",sep="_")
+     tube_notcol <- paste(notcol.ls[i],"d_883732523", sep="_") #notcolnotes
+     TubeID <- paste(tube.ls[i],"d_825582494",sep="_")
+     #tube_notcolnotes <- paste(tube.ls[i],"d_338286049", sep="_")
+     tube_deviation <- paste(notcol.ls[i], "d_678857215",sep="_")
+     #tube_devnotes <- paste(notcol.ls[i],"d_536710547",sep="_") 
+     #select <- c(tubecol,tube_notcol,tube_notcolnotes,tube_deviation,tube_devnotes)
+     select <- c(TubeID,tubecol,tube_notcol,tube_deviation)
+     tmp <- biospe[,(colnames(biospe)%in% c(select,"d_820476880","Site","biocol_Setting"))] 
+
+     notcol <- tmp 
+     colnames(notcol)[colnames(notcol)==TubeID] <- "TubeID"
+     colnames(notcol)[colnames(notcol)==tubecol] <- "tubecol"
+     colnames(notcol)[colnames(notcol)==tube_notcol] <- "tube_notcol"
+     #colnames(notcol)[colnames(notcol)==tube_notcolnotes] <- "tube_notcolnotes"
+     colnames(notcol)[colnames(notcol)==tube_deviation] <- "tube_deviation"
+     #colnames(notcol)[colnames(notcol)==tube_devnotes] <- "tube_deviationnotes"
+     
+     #if(!grepl("tube_notcolnotes",colnames(notcol))){notcol$tube_notcolnotes <- NA}   
+     #if(!grepl("tube_deviationnotes",colnames(notcol))){notcol$tube_deviationnotes <- NA} 
+     
+     notcol$tubeID <- notcol.ls[i]
+     #notcol1 <- notcol[which(notcol$tubecol==104430631),] 
+     notcol_tube <- dplyr::bind_rows(notcol_tube,notcol)
+     #tubenotcol.ls[[i]] <- notcol1
+     #collection_long <- dplyr::bind_rows(collection_long,notcol)
+   } 
+   
+   #collection_long <- as.data.frame(do.call("rbind",notcol_tube))
+   
+   ##collected tube and deviaton (both have the same length oftubes)
+      collection_long <- NULL
+   for (i in 1:length(tube.ls)){
+     
+     tubeid <- paste(tube.ls[i],"d_825582494",sep="_")
+     tubecol <- paste(tube.ls[i],"d_593843561",sep="_")
+     tube_deviation <- paste(tube.ls[i], "d_678857215",sep="_")
+     tube_discard <- paste(tube.ls[i], "d_762124027",sep="_")
+     #select <- c(tubecol,tube_notcol,tube_notcolnotes,tube_deviation,tube_devnotes)
+     select <- c(tubeid,tubecol,tube_deviation,tube_discard)
+     tmp <- biospe[,(colnames(biospe)%in% c(select,"d_820476880","Site","biocol_Setting"))] 
+
+     col <- tmp 
+     colnames(col)[colnames(col)==tubeid] <- "TubeID"
+     colnames(col)[colnames(col)==tubecol] <- "tubecol"
+     colnames(col)[colnames(col)==tube_deviation] <- "tube_deviation"
+     colnames(col)[colnames(col)==tube_discard] <- "tube_discard"
+     
+     col$tubeID <- tube.ls[i]
+     collection_long <- dplyr::bind_rows(collection_long,col)
+   } 
+   
+   collection_long <- collection_long  %>% 
+     dplyr:: mutate(deviation = case_when(tube_deviation == 353358909 ~ "Any Deviation",
+                                          tube_deviation == 104430631 ~ "No Deviation"),
+                    Collected = case_when(tubecol ==353358909 ~ "Collected",
+                                          tubecol == 104430631 ~ "Not  Collected"),
+                    Discarded = case_when(tube_discard == 353358909 ~ "Any Discard",
+                                          tube_discard == 104430631 ~ "No Discard"),
+                    biospecimen=ifelse(tubeID=="d_973670172", "urine",
+                                  ifelse(tubeID=="d_143615646","Mouthwash","blood")),
+                    tube_type = case_when(tubeID == "d_973670172"  ~ "Urine Tube1",
+                                          tubeID == "d_143615646"  ~ "MM Tube1",
+                                          tubeID == "d_299553921"  ~ "SS Tube1",
+                                          tubeID == "d_703954371"  ~ "SS Tube2",
+                                          tubeID == "d_454453939"  ~ "EDTA Tube1",
+                                          tubeID == "d_838567176"  ~ "Heparin Tube1",
+                                          tubeID == "d_652357376"  ~ "ACD Tube1",
+                                          tubeID == "d_677469051"  ~ "EDTA Tube2",
+                                          tubeID == "d_683613884"  ~ "EDTA Tube3",
+                                          tubeID == "d_376960806"  ~ "SS Tube3",
+                                          tubeID == "d_232343615"  ~ "SS Tube4",
+                                          tubeID == "d_589588440"  ~ "SS Tube5",
+                                          tubeID == "d_958646668"  ~ "Heparin Tube2"))
+
+  collection_long$tube_type <- factor(collection_long$tube_type, levels=c("SS Tube1", "SS Tube2","SS Tube3", "SS Tube4", "SS Tube5","Heparin Tube1","Heparin Tube2","EDTA Tube1", "EDTA Tube2","EDTA Tube3","ACD Tube1","Urine Tube1","MM Tube1" ) )  
+     
+   Table17_option2 <- collection_long %>% mutate(deviation = dplyr::case_when(tube_deviation == 353358909 ~ "Any Deviation",
+                                                                              tube_deviation == 104430631 ~ "No Deviation"),
+                                                   Collected = dplyr::case_when(tubecol ==353358909 ~ "Collected",
+                                                                                tubecol == 104430631 ~ "Not Collected")) %>%  #filter(d_650516960==534621077 & !is.na(d_331584571_d_266600170_d_343048998) ) %>% 
+     select(Site,deviation) %>%
+     tbl_cross(    col = deviation,
+                   row = Site,
+                   percent = "row",
+                   #label=(),
+                   missing="no") %>%
+     bold_labels() %>%
+     italicize_levels() %>% 
+     modify_header() %>%
+     modify_caption("Table 17. Number (and percent) of tubes with any deviation by site") %>%
+     as_kable()#tab_header(title = "Patient Characteristics", subtitle = "Presented by treatment")
+   
+   
+   dev_tube1$tube_dev <- paste(dev_tube1$tube_type,"Deviation", dev_tube1$deviationnotes,sep=" ")
+   dev_tube1$tubeID <- substr(dev_tube1$dev_type,1,11)
+  dev <- collection_long %>% filter(tube_deviation==353358909) 
+  dev_tube2 <- merge(dev,dev_tube1[,c("dev_type","TubeID","tubeID","deviationnotes","tube_dev")],by.x=c("TubeID","tubeID"), by.y=c("TubeID","tubeID")) ##to get the deviation notes
+  
+  #Table18_devtype <- dev_tube2 %>% select()
+  
+  dev_count <- dev_tube2 %>% group_by(biocol_Setting,biospecimen,tube_dev) %>%   dplyr::summarize(count=n()) #Table11
+  colnames(dev_count) <- c("Biospecimen Collection Setting","Biospecimen Types", "Biospecimen collection Deviation?","Counts of Biospecimen Deviation")
+
+
+  ##Table19Number of tube tubes not collected at research collection visits
+  ###as Stephanie commended for the order "Order columns to match draw order:"SST1, SST2, Heprarin, EDTA, ACD, Urine, Mouthwash "
+
+  research.coltube<- collection_long %>% filter(biocol_Setting == "Research" & tubecol == 104430631) %>% 
+    mutate(Site=droplevels(Site),
+           tube_type = factor(tube_type,levels=c("SS Tube1", "SS Tube2","Heparin Tube1","EDTA Tube1","ACD Tube1","Urine Tube1","MM Tube1" )))
+
+ 
+  
+#ctable <-  as.data.frame(xtabs(~Site+tube_type, research.coltube))
+ctable <-  CrossTable(research.coltube$Site, research.coltube$tube_type)
+
+
+nocol.type <- as.data.frame(cbind(ctable$t,ctable$prop.col))
+
+  pct_n <- function(x,y){ paste0(x,"( ", round(100*y,2), " %)")}
+      count <- as.data.frame.matrix(ctable$t) # to convert the S3 table into the same dimention table via as.data.frame.matrix
+      perc <- as.data.frame.matrix(ctable$prop.col)
+
+  notcol_combo = array(pct_n(ctable$t,ctable$prop.col),dim=c(5,7))     
+
+  notcol_combo <- as.data.frame(notcol_combo)
+  colnames(notcol_combo) <- colnames(count)
+  
+  count$Total.NotCol <- apply(count,1,sum)
+  total <- sum(count)
+  #notcol_combo$Total.Notcol <- paste0(apply(count[c(1:5),c(1:7)],1,sum), "( ", round(100*apply(count[c(1:5),c(1:7)],1,sum)/total,2), " %)")
+  notcol_combo$Total.Notcol <- paste0(count$Total.NotCol, "( ", round(100*count$Total.NotCol/total,2), " %)")
+  
+  notcol_combo$Site <- rownames(count)
+
+  notcol_combo[6,c(1:8)] <- as.character(apply(count,2,sum))
+  notcol_combo$Site[is.na(notcol_combo$Site)] <- replace_na("Total")                               
+
+Tb.research.coltube <- research.coltube %>% select(tube_type,Site) %>% 
+  tbl_cross(  col = tube_type,
+                  row = Site,
+                   percent = "col",
+                   digits= c(0,2),
+                   #label=(),
+                   missing="ifany",
+                   missing_text="0 ( 0 %)",
+                   margin_text = "Tube Not Collected") %>%
+     modify_header() %>%
+     modify_caption("Table 19. Number of Tube Not Collected at Research Collection Visits") %>%
+     as_kable_extra()
+
+## Number of tube tubes not collected at clinical collections
+
+  clinic.coltube<- collection_long %>% filter(biocol_Setting == "Clinical" & tubecol == 104430631) %>% 
+    mutate(Site=droplevels(Site),
+           tube_type = factor(tube_type,levels=c("SS Tube1", "SS Tube2","SS Tube3", "SS Tube4", "SS Tube5", "Heparin Tube1","Heparin Tube2","EDTA Tube1","EDTA Tube2","EDTA Tube3","ACD Tube1","Urine Tube1" )))
+  
+clinic.ctable<- CrossTable(clinic.coltube$Site,clinic.coltube$tube_type)
+count <- as.data.frame.matrix(clinic.ctable$t)
+perc <- as.data.frame.matrix(clinic.ctable$prop.col)
+
+notcol_combo2 <- array(pct_n(clinic.ctable$t,clinic.ctable$prop.col),dim=c(5,12))     
+
+  notcol_combo2 <- as.data.frame(notcol_combo2)
+  colnames(notcol_combo2) <- colnames(count)
+  
+  count$Total.NotCol <- apply(count,1,sum)
+  total <- sum(count)
+  notcol_combo2$Total.Notcol <- paste0(apply(count[c(1:5),],1,sum), "( ", round(100*apply(count,1,sum)/total,2), " %)")
+  
+  notcol_combo2$Site <- rownames(count)
+
+  notcol_combo2[6,c(1:13)] <- as.character(apply(count,2,sum))
+  notcol_combo2$Site[is.na(notcol_combo2$Site)] <- replace_na("Total")   
+
+##Table X: Reason not collected by tube type and by site for research collections only
+  a<- collection_long[which(collection_long$tubecol==104430631),]
+  b <- notcol_tube[which(notcol_tube$tubecol == 104430631),]
+  notcol_notes <- merge(a, b[,c("tubeID","d_820476880","tube_notcol")], by=c("tubeID","d_820476880"),all.x=TRUE)
+notcol_notes <- notcol_notes %>% 
+  mutate(notcol.notes = case_when(tubecol == 104430631 & tube_notcol==181769837 ~ "Other",
+                                  tubecol == 104430631 & tube_notcol==234139565 ~ "Short Draw",
+                                  tubecol == 104430631 & tube_notcol==681745422 ~ "Participant Refusal",
+                                  tubecol == 104430631 & tube_notcol==745205161 ~ "Participant Attempted",
+                                  tubecol == 104430631 & tube_notcol==889386523 ~ "Supply Unavailable",
+                                  tubecol == 104430631 & is.na(tube_notcol) ~ "Missing Reasons"),
+         Collected = case_when(tubecol ==353358909 ~ "Collected",
+                               tubecol == 104430631 ~ "Not  Collected"),
+                    biospecimen=ifelse(tubeID=="d_973670172", "urine",
+                                  ifelse(tubeID=="d_143615646","Mouthwash","blood")),
+                    tube_type = case_when(tubeID == "d_973670172"  ~ "Urine Tube1",
+                                          tubeID == "d_143615646"  ~ "MM Tube1",
+                                          tubeID == "d_299553921"  ~ "SS Tube1",
+                                          tubeID == "d_703954371"  ~ "SS Tube2",
+                                          tubeID == "d_454453939"  ~ "EDTA Tube1",
+                                          tubeID == "d_838567176"  ~ "Heparin Tube1",
+                                          tubeID == "d_652357376"  ~ "ACD Tube1",
+                                          tubeID == "d_677469051"  ~ "EDTA Tube2",
+                                          tubeID == "d_683613884"  ~ "EDTA Tube3",
+                                          tubeID == "d_376960806"  ~ "SS Tube3",
+                                          tubeID == "d_232343615"  ~ "SS Tube4",
+                                          tubeID == "d_589588440"  ~ "SS Tube5",
+                                          tubeID == "d_958646668"  ~ "Heparin Tube2"))
+
+notcol_notes$tube_type <- factor(notcol_notes$tube_type, levels=c("SS Tube1", "SS Tube2","SS Tube3", "SS Tube4", "SS Tube5","Heparin Tube1","Heparin Tube2","EDTA Tube1", "EDTA Tube2","EDTA Tube3","ACD Tube1","Urine Tube1","MM Tube1" ) ) 
+notcol_notes$notcol.notes <- factor(notcol_notes$notcol.notes, levels=c("Short Draw","Participant Attempted", "Other", "Participant Refusal", "Supply Unavailable", "Missing Reasons"))
+
+n_pct_table <- function(x,y){
+  #x<-clinicnotes.notcol$Site
+  #y<-clinicnotes.notcol$notcol.notes
+  ctable<- CrossTable(x,y)
+count <- as.data.frame.matrix(ctable$t)
+perc <- as.data.frame.matrix(ctable$prop.col)
+
+n<- as.numeric(length(levels(x)))
+
+m <- as.numeric(length(levels(y)))
+
+
+tb_combo <- array(pct_n(ctable$t,ctable$prop.col),dim=c(n,m)) 
+
+  tb_combo <- as.data.frame(tb_combo)
+  colnames(tb_combo) <- colnames(count)
+  
+  total <- sum(count)
+  count$Total <- apply(count,1,sum)
+  tb_combo$Total <- paste0(count$Total, "( ", round(100*(count$Total)/total,2), " %)")
+  
+  tb_combo$Site <- rownames(count)
+
+  tb_combo[(n+1),c(1:(m+1))] <- as.character(apply(count,2,sum))
+  tb_combo$Site[is.na(tb_combo$Site)] <- replace_na("Total")  
+
+  return(tb_combo)
+}
+
+research.notcol <- notcol_notes %>% filter(biocol_Setting=="Research" & tubecol==104430631) %>% 
+   mutate(Site=droplevels(Site),
+           tube_type = factor(tube_type,levels=c("SS Tube1", "SS Tube2","Heparin Tube1","EDTA Tube1","ACD Tube1","Urine Tube1","MM Tube1" )))
+research.notcol$notcol.notes <- factor(research.notcol$notcol.notes, levels=c("Short Draw","Participant Attempted", "Other", "Participant Refusal", "Supply Unavailable", "Missing Reasons"))
+#research.notcol$notcol.notes <- droplevels(research.notcol$notcol.notes)
+
+
+reseachnotes.notcol <- n_pct_table(research.notcol$Site,research.notcol$notcol.notes)
+reseachnotes.coltype <- n_pct_table(research.notcol$tube_type,research.notcol$notcol.notes)
+
+notcol.reasons.research <- rbind(reseachnotes.notcol,reseachnotes.coltype)
+
+research.notcolnotes <- research.notcol %>% select(notcol.notes,Site) %>% 
+  tbl_cross(  col = notcol.notes,
+                  row = Site,
+                   percent = "col",
+                   digits= c(0,2),
+                   label=(notcol.notes ~ "Reason not collected by tube type"),
+                   missing="ifany",
+                   missing_text="0 ( 0 %)")%>%
+     modify_header() %>%
+     modify_caption("Table 19. Number of Tube Not Collected at Research Collection Visits") %>%
+     as_kable_extra()
+
+library(crosstable)
+
+#notcol_notes<- merge(collection_long,notcol_tube,by="tubeID")
+research.notcolnotes <- research.notcol %>% select(notcol.notes,Site, tube_type) %>% crosstable(c(Site, tube_type),by=notcol.notes,showNA="ifany", total="row",margin=c("row", "col"),
+           percent_digits=2, percent_pattern="{n} ({p_col})") %>% as_flextable() 
+
+
+clinicnotes.notcol <- notcol_notes %>% filter(biocol_Setting=="Clinical" & tubecol==104430631 & notcol_notes$biospecimen!="Mouthwash"  )%>%    mutate(Site=droplevels(Site),
+           tube_type = factor(tube_type,levels=c("SS Tube1", "SS Tube2","SS Tube3", "SS Tube4", "SS Tube5","Heparin Tube1","Heparin Tube2","EDTA Tube1", "EDTA Tube2","EDTA Tube3","ACD Tube1","Urine Tube1" )))
+          
+clinicnotes.notcol$notcol.notes <- factor(clinicnotes.notcol$notcol.notes, levels=c("Short Draw","Participant Attempted", "Other", "Participant Refusal", "Supply Unavailable", "Missing Reasons"))
+clinicnotes.notcol$notcol.notes <- droplevels(clinicnotes.notcol$notcol.notes)
+clinicnotes.notcol$tube_type = droplevels(clinicnotes.notcol$tube_type)
+
+clinic.notcolsite <- n_pct_table(clinicnotes.notcol$Site,clinicnotes.notcol$notcol.notes)
+clinicnotes.coltype <- n_pct_table(clinicnotes.notcol$tube_type,clinicnotes.notcol$notcol.notes)
+
+notcol.reasons.clinic <- rbind(clinicnotes.coltype,clinic.notcolsite)
+
+
+reasons <- c("Short Draw","Participant Attempted", "Other", "Participant Refusal", "Supply Unavailable", "Missing Reasons")
+missing <- reasons[which(c(reasons,"Site","Total") %nin% colnames(notcol.reasons.clinic))]
+n.col <- as.numeric(ncol(notcol.reasons.clinic))
+for (i in 1:length(missing)){
+notcol.reasons.clinic[,(n.col+i)] <- "0 (0 %)"
+  colnames(notcol.reasons.clinic)[n.col+i] <- missing[i]
+}
+
+
+notcol.reasons.clinic[c(13,19),c((n.col+1):8)] <- "0"
+
+#Table Number of tube tubes Discarded by tube type and site
+discard.tb <- collection_long  %>% filter(tube_discard == 353358909) %>% 
+  mutate(Site=droplevels(Site),
+           tube_type = droplevels(tube_type))
+discard.site <- n_pct_table(discard.tb$Site,discard.tb$tube_type)
+
+###back to the recruitment table
+biospe.tm <- recrvar.bio$column_name[which(grepl("Date|time|Time", recrvar.bio$Variable.Label))]
+recrvar.bio[which(grepl("Date|time|Time", recrvar.bio$Variable.Label)),c("field_path","Variable.Label")]
+#                              field_path                                                     Variable.Label
+# 12  d_173836415_d_266600170_d_139245758                                 Date/time Clinical Urine Collected
+# 28  d_173836415_d_266600170_d_184451682 Date/Time first baseline blood order placed or baseline urine order placed
+# 43  d_222161762                                  Date/Time blood/urine/mouthwash research survey completed
+# 48  d_173836415_d_266600170_d_224596428                       Clinical Site Urine RRL Date / Time Received
+# 85  d_331584571_d_266600170_d_343048998                                            Time check out complete
+# 100                         d_390198398                            Date/time refused baseline blood sample
+# 101 d_173836415_d_266600170_d_398645039                           Clinical DB blood RRL Date/Time Received
+# 121 d_173836415_d_266600170_d_448660695                                      Date/time Mouthwash Collected
+# 156                         d_534669573                    Date/time Status of Start of blood/urine survey
+# 161 d_173836415_d_266600170_d_541311218                           Clinical DB urine RRL Date/Time received
+# 170 d_173836415_d_266600170_d_561681068                                 Date/time Research Blood Collected
+# 240 d_173836415_d_266600170_d_740582332    Autogenerated date/time stamp for Any specimen collected at RRL
+# 247                         d_764863765                             Date/Time blood/urine survey completed
+# 249 d_173836415_d_266600170_d_769615780                                       Date/Time Blood Order Placed
+# 260                         d_808663245                            Date/time refused baseline urine sample
+# 266 d_173836415_d_266600170_d_822274939                       Clinical Site Blood RRL Date / Time Received
+# 267                         d_822499427 Date/time Status of Start of blood/urine/mouthwash research survey
+# 276 d_331584571_d_266600170_d_840048338                                        Date/Time Check-In Complete
+# 278 d_173836415_d_266600170_d_847159717                                 Date/time Research Urine Collected
+# 306 d_173836415_d_266600170_d_939818935                                       Date/Time Urine Order Placed
+# 319 d_173836415_d_266600170_d_982213346                                 Date/time Clinical Blood Collected
+recrvar.bio[which(grepl("Survey", recrvar.bio$Primary.Source)),c("field_path","Primary.Source","Variable.Label")]
+#      field_path Primary.Source                                                     Variable.Label
+# 43  d_222161762         Survey          Date/Time blood/urine/mouthwash research survey completed
+# 52  d_253883960         Survey                                        Flag for blood/urine survey
+# 58  d_265193023         Survey                     Blood/urine/mouthwash combined research survey
+# 156 d_534669573         Survey                    Date/time Status of Start of blood/urine survey
+# 164 d_547363263         Survey                                          Flag for mouthwash survey
+# 247 d_764863765         Survey                             Date/Time blood/urine survey completed
+# 267 d_822499427         Survey Date/time Status of Start of blood/urine/mouthwash research survey
+recr.biospe <- merge(recr.bio,tube_col,by="Connect_ID")
+recr.biospe <- recr.biospe %>%
+  mutate(research.sv = case_when(d_265193023 == 231311385 ~ "Submitted",
+                                 d_265193023 == 615768760 ~ "Started",
+                                 d_265193023 == 972455046 ~ "Not Started"),
+          clinic.sv = case_when(d_253883960 == 231311385 ~ "Submitted",
+                               d_253883960 == 615768760 ~ "Started",
+                               d_253883960 == 972455046 ~ "Not Started"))
+
+##Total number and percent of research biospecimen survey status
+research.survey <- recr.biospe %>% filter(d_650516960 == 534621077)
+ research.survey <- research.survey %>% 
+   mutate(research.svtime =  difftime(as.POSIXct(ymd_hms(d_222161762)),as.POSIXct(ymd_hms(d_822499427)),units="hours"),##survey time from start to complete
+         tm_biocolsuv = difftime(as.POSIXct(ymd_hms(d_222161762)),as.POSIXct(ymd_hms(d_331584571_d_266600170_d_840048338)),units="hours")) #time between survey completion to biospecimen collection visit check in
+
+research.survey <-research.survey %>%
+  mutate(checktmvisit = ifelse( as.numeric(tm_biocolsuv) >72,"greater than 72hrs (3days)",
+                        ifelse( 72 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 48, "> 48 hrs to 72 hrs",
+                          ifelse( 48 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 24, "> 24 hrs to 48 hrs",   
+                            ifelse( 24 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 12, "> 12 hrs to 24 hrs",
+                              ifelse( 12 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 3, "> 3 hrs to 12 hrs",      
+                                 ifelse( 3 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) >= 0, "0 hrs to 3 hrs", NA)))))),
+         time_biochk = difftime(as.POSIXct(ymd_hms(d_331584571_d_266600170_d_343048998)),as.POSIXct(ymd_hms(d_331584571_d_266600170_d_840048338)),units="mins"))
+
+research.survey$biochk_outlier <- ifelse(is.na(research.survey$time_biochk), "Missing (not checked out)", ifelse( 0<= as.numeric(research.survey$time_biochk)/60 & as.numeric(research.survey$time_biochk)/60 <= 24, "No Outlier", ifelse(as.numeric(research.survey$time_biochk)/60 > 24, "Outlier",  "Undefined")) )   
+
+research.survey$biochk_outlier <- factor(research.survey$biochk_outlier,levels=c("No Outlier","Outlier","Missing (not checked out)"))
+
+research.survey$checktmvisit <- factor(research.survey$checktmvisit, levels=c("0 hrs to 3 hrs","> 3 hrs to 12 hrs","> 12 hrs to 24 hrs","> 24 hrs to 48 hrs","> 48 hrs to 72 hrs","greater than 72hrs (3days)"))
+
+research.survey[which(research.survey$research.svtime <0),c("Connect_ID","d_650516960","Site","d_265193023","d_222161762","d_822499427")]
+#     Connect_ID d_650516960                            Site d_265193023              d_222161762              d_822499427
+# 259 2848814334   534621077 Marshfield Clinic Health System   231311385 2022-08-26T08:00:00.000Z 2022-08-30T00:43:06.653Z
+# 274 2927684519   534621077 Marshfield Clinic Health System   231311385 2022-11-16T08:00:00.000Z 2022-11-30T22:39:24.145Z
+# 337 3342756222   534621077                  HealthPartners   231311385 2022-10-22T08:00:00.000Z 2022-11-08T03:48:34.373Z
+# 661 5226692703   534621077                  HealthPartners   231311385 2022-08-15T08:00:00.000Z 2022-08-15T22:49:30.154Z
+##these four participants' survey time viloted the time sequential rule
+research.survey[which(as.numeric(research.survey$tm_biocolsuv)<0),c("Connect_ID","d_650516960","Site","d_265193023","d_222161762","d_822499427","d_331584571_d_266600170_d_840048338")]
+#     Connect_ID d_650516960                            Site d_265193023              d_222161762              d_822499427
+# 274 2927684519   534621077 Marshfield Clinic Health System   231311385 2022-11-16T08:00:00.000Z 2022-11-30T22:39:24.145Z
+#     d_331584571_d_266600170_d_840048338
+# 274            2022-11-16T13:10:58.573Z
+
+sv.complete <- as.data.frame(tab1(research.survey$research.sv))
+sv.complete <- sv.complete %>% mutate(cumulative.Freq = ifelse(output.table.Percent<100.0, cumsum(output.table.Frequency),output.table.Frequency))
+
+# Baseline research biospecimen survey completion time from time of visit check-in
+
+time.sv_checkin <- research.survey %>% filter(d_265193023==231311385) %>% select(checktmvisit) %>%
+  tbl_summary(
+    label=checktmvisit~"Time from Research Biospecimen Survey Completion Time from Time of Visit Check-In",
+    statistic = list(all_categorical() ~ "{n}  ({p}%)"),
+              digits = all_categorical() ~ c(0, 2),
+    missing_text="Missing"
+  )
+total <- as.numeric(nrow(research.survey[which(research.survey$d_265193023==231311385),]))
+time.sv_checkin <- as.data.frame(tab1(research.survey[which(research.survey$d_265193023==231311385),]$checktmvisit))
+time.sv_checkin <-time.sv_checkin %>% 
+  mutate(cumulative.Freq = ifelse(trimws(rownames(time.sv_checkin))!="Total", cumsum(output.table.Frequency),output.table.Frequency),
+         cumulative.Perc = round(100*cumulative.Freq/total,2))
+
+check<-research.survey[which(research.survey$d_265193023==231311385 &  is.na(research.survey$checktmvisit)), c("Connect_ID","d_265193023","d_222161762","d_822499427","d_331584571_d_266600170_d_840048338","tm_biocolsuv","checktmvisit")]
+
+                             
+#Total number and percent of clinical biospecimen survey status
+clinic.survey <- recr.biospe %>% filter(d_650516960 == 664882224)
+ clinic.survey <- clinic.survey %>% 
+   mutate(d_173836415_d_266600170_d_139245758_clc = as.POSIXct(ymd_hms(d_173836415_d_266600170_d_139245758)), ##urine
+          d_173836415_d_266600170_d_982213346_clc = as.POSIXct(ymd_hms(d_173836415_d_266600170_d_982213346)), ##blood collected
+          d_173836415_d_266600170_d_740582332_clc = as.POSIXct(ymd_hms(d_173836415_d_266600170_d_740582332)), ##Autogenerated date/time stamp for Any specimen collected at RRL
+          d_173836415_d_266600170_d_139245758_urine =as.POSIXct(ymd_hms(d_173836415_d_266600170_d_139245758)), # urine collected
+          d_173836415_d_266600170_d_541311218_urine = as.POSIXct(ymd_hms(d_173836415_d_266600170_d_541311218)),##Clinical DB urine RRL Date/Time received
+          d_173836415_d_266600170_d_224596428_urine = as.POSIXct(ymd_hms(d_173836415_d_266600170_d_224596428)), #Clinical Site Urine RRL Date / Time Received
+     clinic.svtime =  difftime(as.POSIXct(ymd_hms(d_764863765)),as.POSIXct(ymd_hms(d_534669573)),units="hours")) ##survey time from start to complete
+ clinic.survey <- clinic.survey %>% mutate(clc.coltm  = do.call(pmin, c(select(.,ends_with('clc')),na.rm=TRUE))) ###any biospecimen collected time
+                                           
+ 
+
+  clinic.survey$tm_biocolsuv <-  difftime(as.POSIXct(ymd_hms(clinic.survey$d_764863765)),clinic.survey$clc.coltm,units="hours") 
+  #time between survey completion to biospecimen collection visit check in
+
+clinicsv.complete <- as.data.frame(tab1(clinic.survey$clinic.sv))
+clinicsv.complete <- clinicsv.complete %>% 
+  mutate(cumulative.Freq = ifelse(output.table.Percent<100.0, cumsum(output.table.Frequency),output.table.Frequency))
+
+
+# Number and percent of clinical biospecimen survey completion time by survey status
+clinic.survey <-clinic.survey %>%
+  mutate(checktmvisit = ifelse( as.numeric(tm_biocolsuv) >72,"greater than 72hrs (3days)",
+                        ifelse( 72 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 48, "> 48 hrs to 72 hrs",
+                          ifelse( 48 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 24, "> 24 hrs to 48 hrs",   
+                            ifelse( 24 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 12, "> 12 hrs to 24 hrs",
+                              ifelse( 12 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) > 3, "> 3 hrs to 12 hrs",      
+                                 ifelse( 3 >= as.numeric(tm_biocolsuv) & as.numeric(tm_biocolsuv) >= 0, "0 hrs to 3 hrs", NA)))))))
+
+#clinic.survey$biochk_outlier <- ifelse(as.numeric(clinic.survey$tm_biocolsuv)/60 > 24, "Outlier",
+#                               ifelse( 0<= as.numeric(clinic.survey$tm_biocolsuv)/60 & as.numeric(clinic.survey$tm_biocolsuv)/60 <= 24, #"No Outlier", "Missing (not checked out)")) ##clinical collection doesn't have checkin time but only has the collection time
+
+clinic.survey$checktmvisit <- factor(clinic.survey$checktmvisit, levels=c("0 hrs to 3 hrs","> 3 hrs to 12 hrs","> 12 hrs to 24 hrs","> 24 hrs to 48 hrs","> 48 hrs to 72 hrs","greater than 72hrs (3days)"))
+
+clinic.survey$checktmvisit <- droplevels(clinic.survey$checktmvisit)
+time.clcsv_checkin <- as.data.frame.matrix(tab1(clinic.survey[which(clinic.survey$d_253883960==231311385),]$checktmvisit)$output.table)
+time.clcsv_checkin <-time.clcsv_checkin %>% 
+  mutate(cumulative.Freq = ifelse(trimws(rownames(time.clcsv_checkin))!="Total", cumsum(time.clcsv_checkin$Frequency),time.clcsv_checkin$Frequency))
+         #cumulative.Perc = ifelse(trimws(rownames(time.clcsv_checkin))!="Total", cumsum(output.table.Frequency),output.table.....NA..)
+         
+
+
+# Research biospecimen collection visit length (in minutes)
+statics_biock <- tapply(as.numeric(research.survey$time_biochk),research.survey$biochk_outlier,summary)
+tab32a <- bind_rows(statics_biock)
+tab32a$`Outlier Present?` <- ifelse(rownames(statics_biock)==1,"no outliers","outlier")
+
+research.vt.length <- research.survey %>%  mutate(time=as.numeric(time_biochk)) %>% group_by(biochk_outlier,Site) %>% 
+  dplyr::summarize('Number collection visit'=n(),
+                   min = min(time,na.rm = TRUE),
+                   q1 = quantile(time, 0.25,na.rm = TRUE),
+                   median = median(time,na.rm = TRUE),
+                   mean = mean(time,na.rm = TRUE),sd=sd(time,na.rm = TRUE),
+                   q3 = quantile(time, 0.75,na.rm = TRUE),
+                   max = max(time,na.rm = TRUE))
+
+
+#research.vt.length[is.na(research.vt.length)] <- replace_na(".")
+#tapply(as.numeric(bio_survey$time_biochk),bio_survey$biochk_outlier,sd)
+#Figure 17. Research biospecimen collection visit length (in minutes)
+##Blood Collection Completeness by Walk-In vs Scheduled for UChicago Site
+
+# sv_time<- recr.biospe %>% group_by(biochk_outlier, Site) %>%
+#   dplyr::summarize(mean=mean(as.numeric(time_biochk)),sd=sd(as.numeric(time_biochk)), 
+#                    min=min(as.numeric(time_biochk)),
+#                    Q1=quantile(as.numeric(time_biochk),probs=0.25,na.rm=TRUE),
+#                    median=median(as.numeric(time_biochk)),
+#                    Q3=quantile(as.numeric(time_biochk),probs=0.75,na.rm=TRUE), max=max(as.numeric(time_biochk)))
+# sv_time <- apply_labels(sv_time,
+#                         d_827220437.y = "Site",#RcrtES_Site_v1r0
+#                         d_827220437.y = c("HealthPartners"= 531629870, "Henry Ford Health System"=548392715, "Kaiser Permanente Colorado" = 125001209,
+#                                         "Kaiser Permanente Georgia" = 327912200,"Kaiser Permanente Hawaii" = 300267574,"Kaiser Permanente Northwest" = 452412599,
+#                                         "Marshfield Clinic Health System" = 303349821,"Sanford Health" = 657167265, "University of Chicago Medicine" = 809703864,
+#                                         "National Cancer Institute" = 517700004,"National Cancer Institute" = 13,"Other" = 181769837),
+#                         biochk_outlier = "Outlier Present?",
+#                         biochk_outlier = c("No outliers"= 0, "Outliers"=1, "Missing(Not Checkout)"=" "))
+# library(plyr)
+# sv_time <- sv_time %>% mutate(Site= case_when(d_827220437.y ==125001209 ~ "KPCO", 
+#                                               d_827220437.y == 327912200 ~ "KPGA", 
+#                                               d_827220437.y == 452412599 ~ "KPNW", 
+#                                               d_827220437.y == 303349821 ~ "Marshfield",
+#                                               d_827220437.y == 300267574 ~ "KPHI",
+#                                               d_827220437.y == 531629870 ~ "HP", 
+#                                               d_827220437.y == 548392715 ~ "HFHS",
+#                                               d_827220437.y == 657167265 ~ "SH",
+#                                               d_827220437.y == 809703864 ~ "UoCh", 
+#                                               d_827220437.y == 517700004 ~ "NIH",
+#                                               d_827220437.y == 181769837 ~ "Others"),
+#                             `Outlier Present?` = case_when(biochk_outlier == 0 ~ "No outliers",
+#                                                            biochk_outlier == 1 ~ "Outliers",
+#                                                            is.na(biochk_outlier)  ~ "Missing(Not Checkout)"))
+# 
+
+#Figure 17b. Research biospecimen collection visit length by site (in minutes)
+# recr.biospe <- recr.biospe %>% mutate(Site= case_when(d_827220437 ==125001209 ~ "KPCO", 
+#                                               d_827220437 == 327912200 ~ "KPGA", 
+#                                               d_827220437 == 452412599 ~ "KPNW", 
+#                                               d_827220437 == 303349821 ~ "Marshfield",
+#                                               d_827220437 == 300267574 ~ "KPHI",
+#                                               d_827220437 == 531629870 ~ "HP", 
+#                                               d_827220437 == 548392715 ~ "HFHS",
+#                                               d_827220437 == 657167265 ~ "SH",
+#                                               d_827220437 == 809703864 ~ "UoCh", 
+#                                               d_827220437 == 517700004 ~ "NIH",
+#                                               d_827220437 == 181769837 ~ "Others"),
+#                               `Outlier Present?` = case_when(biochk_outlier == 0 ~ "No outliers",
+#                                                              biochk_outlier == 1 ~ "Outliers",
+#                                                              is.na(biochk_outlier)  ~ "Missing(Not Checkout)"))
+# 
+sv.outlier.research <- ggplot(research.survey, aes(x=Site, y=as.numeric(time_biochk),fill=Site,color=Site)) + 
+  geom_boxplot() + geom_jitter(width = 0.2) +   scale_fill_brewer(palette="Dark2") +
+  geom_hline(linetype = "dashed", yintercept = 1440,color="red") + 
+  annotate('text', x=0.8, y=1800, label = "24 hours",size=3)+
+  ggtitle("Fig 1. Research Biospecimen CollectionVisit Length (in Minutes) by Site") +
+          ylab("Visit Length (minutes)") + xlab("Site") +
+  scale_y_continuous(limits = c(0, 50000)) +
+  theme(panel.background = element_blank(),
+        legend.title = element_text(size=7),
+        axis.line = element_line(size=0.2),
+        axis.text.x = element_text(angle = 60,hjust = 1, size = 8, face = "bold"), 
+        plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+
+
+###for the clinical collections
+
+# ggplot(clinic.survey, aes(x=Site, y=as.numeric(time_biochk),fill=Site,color=Site)) +
+#   geom_boxplot() + geom_jitter(width = 0.2) +   scale_fill_brewer(palette="Dark2") +
+#   geom_hline(linetype = "dashed", yintercept = 1440,color="red") +
+#   ggtitle("Research biospecimen collection visit length (in minutes) by site") +
+#           ylab("Visit Length (minutes)") + xlab("Site") +
+#   scale_y_continuous(limits = c(0, 50000)) +
+#   theme(panel.background = element_blank(),
+#         legend.title = element_text(size=7),
+#         axis.line = element_line(size=0.2),
+#         axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),
+#         plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+
+
+##Figure 4. Number of biospecimen collection visits over time by site
+#BioCol_Starttime*wk*wk_date*RcrtES_Site_v1r0
+#Table 18. Number of Blood Collection Completions By the Final Collection day of the week of Chicago Site
+##to check the days of week for the collection in Chicago site
+#d_556788178	as BioRec_CollectFinalTime_v1r0,
+#d_678166505	as BioCol_ColTime_v1r0 "Collection Date/Time"
+# if RcrtES_Site_v1r0=809703864 then Chicago=1;
+# else chicago=0;
+# if BioRec_CollectFinalTime_v1r0 ^=. and RcrtV_VerificationTm_V1R0 ^=. then do;
+# BioRec_CollectFinalWeekDay_v1r0 =weekday(datepart(BioRec_CollectFinalTime_v1r0));
+# attrib BioRec_CollectFinalWeekDay_v1r0 label="day of the week for Collection Entry Finalized" format=wkdayfmt.;
+# end;
+research.survey<- research.survey %>% mutate(#weekday = weekdays(ymd_hms(collection.tm)),
+                                    #chicago = ifelse(d_827220437.y == 809703864, "Chicago","non Chicago"),
+                                    start.date = min(schedulecol.tm),
+                                    current.date=max(as.POSIXct(ymd_hms(schedulecol.tm))),
+                                    BioRec_CollectScheduled = ifelse(as.Date(ymd_hms(schedulecol.tm)) >= as.Date(as.POSIXct(ymd_hms(d_914594314))),1,0))
+                                    
+                                    
+research.survey$visit.wk <- ceiling(as.numeric(difftime(ymd_hms(research.survey$collection.tm),research.survey$start.date, units="weeks")))
+research.survey$visit.wkdate <- research.survey$start.date + dweeks(research.survey$visit.wk)
+visit_wk_site <- research.survey %>% arrange(Site,visit.wk,visit.wkdate) %>% group_by(Site,visit.wk,visit.wkdate) %>% tally()
+# visit_wk <- recr_survey1[,c("Connect_ID","d_678166505","d_827220437.y","d_556788178","start.date","visit.wk","weekday","chicago")]
+# 
+# visit_wk_site <- as.data.frame(CrossTable(visit_wk$d_827220437.y,visit_wk$visit.wk, prop.t=FALSE, prop.r=FALSE, prop.c=TRUE,prop.chisq=FALSE)$t)
+# 
+# visit_wk_site$start.date <- unique(visit_wk$start.date)
+# week.date <- as.data.frame(seq(as.Date(as.POSIXct(ymd_hms(unique(visit_wk$start.date)))),as.Date(as.POSIXct(ymd_hms(unique(recr_survey1$current.date)))),by='week'))
+# names(week.date) <- "week.date"
+# week.date$week <- rownames(week.date)
+# visit_wk_site <- visit_wk_site[order(visit_wk_site$x),]
+# visit_wk_site$week.date <- week.date$week.date
+# visit_wk_site <- visit_wk_site %>% mutate(Site= case_when(x ==125001209 ~ "KPCO", 
+#                                                           x == 327912200 ~ "KPGA", 
+#                                                           x == 452412599 ~ "KPNW", 
+#                                                           x == 303349821 ~ "Marshfield",
+#                                                           x == 300267574 ~ "KPHI",
+#                                                           x == 531629870 ~ "HP", 
+#                                                           x == 548392715 ~ "HFHS",
+#                                                           x == 657167265 ~ "SH",
+#                                                           x == 809703864 ~ "UoCh", 
+#                                                           x == 517700004 ~ "NIH",
+#                                                           x == 181769837 ~ "Others"))
+# 
+research.vt <- ggplot(visit_wk_site, aes(x=as.Date(visit.wkdate), y=n,fill=Site, color=Site)) +
+  geom_line() + geom_point(width = 0.2) +
+  scale_y_continuous(name="# Number of Visits per Week", limits=c(0,30)) +
+  scale_x_date(name="Date",date_labels = "%y-%m-%d", date_breaks = "2 weeks")  +
+  scale_fill_brewer(palette="Dark2") + 
+  ggtitle(label="Fig 2. Number of Weekly Research Biospecimen Collection Visits over Time by Site") +
+  #theme_ipsum() +
+  theme(panel.background = element_blank(),
+        legend.title = element_text(size=7),
+        axis.line = element_line(size=0.2),
+        axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
+        axis.title.y = element_text(size = 14, face = "bold",color="black"),                                                            
+        plot.title = element_text(hjust = 0.5,size = 12, face = "bold")) 
+  #+scale_x_date(limit=c(as.Date("2022-06-10"),as.Date("2023-10-16"))) + scale_y_continuous(breaks = seq(0, 30, by = 3))
+
+###clnical blood collections
+clc.bldtm <- c("d_173836415_d_266600170_d_769615780","d_173836415_d_266600170_d_822274939","d_173836415_d_266600170_d_398645039","d_173836415_d_266600170_d_982213346","d_173836415_d_266600170_d_740582332")
+clc.urinetm <- c("d_173836415_d_266600170_d_139245758","d_173836415_d_266600170_d_224596428","d_173836415_d_266600170_d_541311218","d_173836415_d_266600170_d_939818935","d_173836415_d_266600170_d_740582332")
+
+clc.blood.vt <- clinic.survey[which(clinic.survey$Site!="HealthPartners"),c("Connect_ID","Site","bldcol_max","collection.tm",clc.bldtm)]
+clc.blood.vt$bld.startdate <- min(as.POSIXct(ymd_hms(clc.blood.vt$d_173836415_d_266600170_d_982213346)),na.rm=TRUE) # Date/time Clinical Blood Collected
+clc.blood.vt$bld.receiveddate <- as.POSIXct(ymd_hms(clc.blood.vt$d_173836415_d_266600170_d_398645039)) #Clinical DB blood RRL Date/Time Received
+clc.blood.vt$visit.wk <- ceiling(as.numeric(difftime(clc.blood.vt$bld.receiveddate,clc.blood.vt$bld.startdate, units="weeks")))
+clc.blood.vt$visit.wkdate <- as_date(clc.blood.vt$bld.startdate + dweeks(clc.blood.vt$visit.wk))
+clc.blood.wk_site <- clc.blood.vt %>% arrange(Site,visit.wk,visit.wkdate) %>% group_by(Site,visit.wk,visit.wkdate) %>% tally()
+
+
+
+clc_bld_vt.site<-ggplot(clc.blood.wk_site, aes(x=as_date(ymd(visit.wkdate)), y=n,fill=Site, color=Site)) +
+  geom_line() + 
+  geom_point(width = 0.2) +
+  scale_y_continuous(name="# Number of Visits per Week", limits=c(0,5)) +
+  scale_x_date(name="Date",date_labels = "%y-%m-%d", date_breaks = "1 week")  +
+  scale_fill_brewer(palette="Dark2") + 
+  ggtitle(label="Fig 3. Number of Visits of Weekly Clinical Blood Collection over time by site") +
+  #theme_ipsum() +
+  theme(panel.background = element_blank(),
+        legend.title = element_text(size=7),
+        axis.line = element_line(size=0.2),
+        axis.text.x = element_text(angle=60, hjust = 1,size = 8, face = "bold"),                                                            
+        plot.title = element_text(hjust = 0.5,size = 12, face = "bold")) 
+  #+scale_x_date(limit=c(as.Date("2022-11-29"),as.Date("2023-01-23")),date_breaks = "1 week", date_labels = "%Y %b %d") +
+  #scale_y_continuous(breaks = seq(0, 30, by = 3))
+
+
+clc.urine.vt <- clinic.survey[which(clinic.survey$Site!="HealthPartners"),c("Connect_ID","Site","Urine_col_max","collection.tm",clc.urinetm)]
+clc.urine.vt$urine.startdate <- min(as.POSIXct(ymd_hms(clc.urine.vt$d_173836415_d_266600170_d_139245758)),na.rm=TRUE)
+clc.urine.vt$urine.receiveddate <- as.POSIXct(ymd_hms(clc.urine.vt$d_173836415_d_266600170_d_541311218))
+clc.urine.vt$visit.wk <- ceiling(as.numeric(difftime(clc.urine.vt$urine.receiveddate,clc.urine.vt$urine.startdate, units="weeks")))
+clc.urine.vt$visit.wkdate <- as_date(clc.urine.vt$urine.startdate + dweeks(clc.urine.vt$visit.wk))
+clc.urine.wk_site <- clc.urine.vt %>% arrange(Site,visit.wk,visit.wkdate) %>% group_by(Site,visit.wk,visit.wkdate) %>% tally()
+
+clc_urine_vt.site<-ggplot(clc.urine.wk_site, aes(x=as_date(ymd(visit.wkdate)), y=n,fill=Site, color=Site)) +
+  geom_line() + 
+  geom_point(width = 0.2) +
+  scale_y_continuous(name="# Number of Visits of Weekly Clinical Urine Collections", limits=c(0,5)) +
+  scale_x_date(name="Date",date_labels = "%y-%m-%d", date_breaks = "1 week")  +
+  scale_fill_brewer(palette="Dark2") + 
+  ggtitle(label="Fig 4. Number of Weekly Clinical Urine collection visits over time by site") +
+  #theme_ipsum() +
+  theme(panel.background = element_blank(),
+        legend.title = element_text(size=7),
+        axis.line = element_line(size=0.2),
+        axis.text.x = element_text(angle=60, hjust = 1,size = 8, face = "bold"),                                                            
+        plot.title = element_text(hjust = 0.5,size = 12, face = "bold")) 
+
+```
+ 
+## Tables
+
+
+```{r, eval=TRUE,echo=FALSE}
+options(knitr.table.format = "latex")
+options(kableExtra.auto_format = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+#Table1_biospecol
+knitr::kable(biospe.t1[,c(5,3,4,6)],col.names=c("Site","Any Samples Collected", "No Samples Collected", "Total"),format.args = list(big.mark = ","),caption='Table 1. Number (and percent) of verified participants with any baseline biospecimen collections',row.names=FALSE, align=c("l","l","l","c"), booktabs=TRUE)
+
+
+#knitr::kable(t1_all1,caption='Table 1. Number (and percent) of verified participants with any baseline biospecimen collections by site',row.names=FALSE, align=c("l","l","l","c"), booktabs=TRUE)
+
+#Table2_bldcol
+knitr::kable(biospe.bld[,c(5,4,3,6)],col.names=c("Site","Blood Collected", "Blood Not Collected", "Total"),format.args = list(big.mark = ","),caption='Table 2. Number (and percent) of verified participants with baseline blood collected',row.names=FALSE, align=c("l","l","l","c"), booktabs=TRUE)
+
+#Table3_urincol
+knitr::kable(biospe.urine[,c(5,4,3,6)],col.names=c("Site","Urine Collected", "Urine Not Collected", "Total"),format.args = list(big.mark = ","),caption='Table 3. Number (and percent) of verified participants with baseline urine collected',row.names=FALSE, align=c("l","l","l","c"), booktabs=TRUE)
+
+#Table4_mwcol
+knitr::kable(biospe.mw[,c(5,4,3,6)],col.names=c("Site","Mouthwash Collected", "Mouthwash Not Collected", "Total"),format.args = list(big.mark = ","),caption='Table 4. Number (and percent) of verified participants with baseline mouthwash collected',row.names=FALSE, align=c("l","l","l","c"), booktabs=TRUE)
+
+knitr::kable(biosettings,caption='Table 5. Number of blood, urine, and mouthwash collected by collection setting.', row.names=FALSE, align=c("l","c","c","c"), format.args = list(big.mark = ","), booktabs = TRUE)
+
+knitr::kable(biocol,col.names=c("Blood Collected?","Urine Collected?","Mouthwash Collected?","Frequency Count","Percent of Total %","Frequency Cumulative","Frequency Cumulative Percent %"), caption='Table 6. Baseline biospecimen collection status among verified participants. Based on data entered into Connect Biospecimen Dashboard.', row.names=FALSE, align=c("l","c","c","c","c","c","c"), format.args = list(big.mark = ","),format="latex", booktabs = TRUE) %>% kable_styling(latex_options = "scale_down")
+```
+
+```{r,echo=FALSE,error=FALSE,message=FALSE,results='asis'}
+#options(knitr.table.format = "latex")
+#options(kableExtra.auto_format = FALSE)
+#knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+for (i in 5:length(biocol.site)){
+  site <- names(biocol.site[i])
+  n <- i-4
+  print(knitr::kable(biocol.site[[site]],col.names=c("Site","Blood Collected?","Urine Collected?","Mouthwash Collected?","Frequency Count","Percent of Total %","Frequency Cumulative","Frequency Cumulative Percent %"), caption=paste("Table 6.",n, " Baseline biospecimen collection status among verified participants of ",site, sep=""), row.names=FALSE, align=c("l","c","c","c","c","c","c"), format.args = list(big.mark = ","), booktabs = TRUE) %>% kable_styling(latex_options = "scale_down"))
+}
+```
+
+```{r,echo=FALSE,error=FALSE,message=FALSE,results='asis'}
+#table6
+knitr::kable(bldcol_research1, col.names=c("Site","All Blood Tubes Collected","Partial Blood Tubes Collected","No Blood Tubes Collected","Total"), caption='Table 7. Blood Completeness among Baseline Research Collections', row.names=FALSE, align=c("l","c","c","c","c"), booktabs = TRUE) %>% kable_styling(latex_options = "scale_down")
+
+knitr::kable(bldcol_clinic[,c(6,7,1:4,8,5)], caption='Table 8. Blood Completeness among Baseline Clinic Collections', row.names=FALSE, align=c("l","c","c","c","c"), booktabs = TRUE) %>% kable_styling(latex_options = "scale_down")
+
+Table8_BldCli
+
+Table9_UrineCli
+
+knitr::kable(Table17[,c(7,5,6,4)],col.names=c("Site","Any Deviations","No Deviations", "Total"), caption='Table 11. Number (and percent) of tubes with any deviation by site',row.names=FALSE, align=c("l","c","c","c"), booktabs = TRUE )
+
+knitr::kable(dev_count,caption='Table 12. Number of Deviations by Biospecimen Type and by Tube Type', row.names=FALSE, align=c("l","c","c","c"), booktabs = TRUE) %>% kable_styling(latex_options = "scale_down") 
+
+knitr::kable(notcol_combo[,c(9,1:8)],caption='Table 13. Number of Tubes Not Collected at Research Collection Visits', row.names=FALSE,align=c("l","c","c","c","c","c","c","c"), booktabs = TRUE)  %>% kable_styling(latex_options = "scale_down") %>% landscape()
+
+knitr::kable(notcol_combo2[,c(14,1:13)],caption='Table 14. Number of Tubes Not Collected at Clinic Collection Visits', row.names=FALSE,align=c("l","c","c","c","c","c","c","c"), booktabs = TRUE) %>%  kable_styling(latex_options = "scale_down") %>% landscape()
+
+knitr::kable(notcol.reasons.research[,c(8,1:7)], caption='Table 15. Number of Tube Not Collected by Tube Type, and By Site at Research Collection Visits',row.names=FALSE,align=c("l","c","c","c","c","c","c"), booktabs = TRUE) %>% kable_styling(latex_options = "scale_down")
+
+knitr::kable(notcol.reasons.clinic[,c(3,4:8,1,2)], caption='Table 16. Number of Tube Not Collected by Tube Type, and By Site at Clinic Collections',row.names=FALSE,align=c("l","c","c","c","c","c","c"), booktabs = TRUE) %>% kable_styling(latex_options = "scale_down")
+
+knitr::kable(discard.site[,c(6,1:5)], caption='Table 17. Number of Biospecimen Tubes Discarded', row.names=FALSE, col.names=c("Site", "Number of Heparin Tube1 Discarded", "Number of EDTA Tube1 Discarded","Number of ACD Tube1 Discarded", "Number of Urine Tube1 Discarded", "Total Tubes Discarded"), align=c("l","c","c","c","c","c","c"), booktabs = TRUE) %>% kable_styling(latex_options = "scale_down")
+
+knitr::kable(sv.complete[,c(2:5)],caption='Table 18. Baseline Research Biospecimen Survey Status', row.names=TRUE, col.names=c("Frequency","Percent %", "Cumulative Percent %", "Cumulative Frequency"), align=c("l","c","c","c","c","c"), booktabs = TRUE)
+
+knitr::kable(clinicsv.complete[,c(2:5)],caption='Table 19. Baseline Clinical Biospecimen Survey Status', row.names=TRUE, col.names=c("Frequency","Percent %", "Cumulative Percent %", "Cumulative Frequency"), align=c("l","c","c","c","c","c"), booktabs = TRUE)
+
+knitr::kable(time.sv_checkin[,c(2,3,5,6)] , caption='Table 20. Baseline Research Biospecimen Survey Completion Time from Time of Visit Check-In',row.names=TRUE,col.names=c("Frequency","Percent %", "Cumulative Percent %", "Cumulative Frequency"), align=c("l","c","c","c","c"), booktabs = TRUE)
+
+
+knitr::kable(time.clcsv_checkin, caption='Table 21. Baseline Clinical Biospecimen Survey Completion Time from Time of Visit Check-In',row.names=TRUE,col.names=c("Frequency","Percent %", "Cumulative Percent %", "Cumulative Frequency"), align=c("c","c","c","c"), booktabs = TRUE)
+
+colnames(research.vt.length)[1] = "Outlier"
+knitr::kable(research.vt.length,caption='Table 22. Research biospecimen collection visit length by site (in minutes))',row.names=FALSE, align=c("l","c","c","c","c","c","c","c","c","c"),digits=2, booktabs = TRUE)%>% kable_styling(latex_options = "scale_down") %>% landscape()
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+#boxplot(as.numeric(research.survey$time_biochk),main="Figure 33a. Research biospecimen collection visit length (in minutes)",
+#        ylab="Visit Length (minutes)") 
+#abline(h=1440, col="red")
+```
+
+```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 1'}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+sv.outlier.research
+```
+
+```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 2'}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+research.vt
+```
+
+```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 3'}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+clc_bld_vt.site
+```
+
+```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 4'}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+clc_urine_vt.site
+```
+
+##download the biospecimen data
+
+```{r data,eval=TRUE,echo=FALSE,include=FALSE}
+ currentDate <- Sys.Date()
+ write.csv(biospe,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_biospecimen_",currentDate,".csv",sep=""),row.names = F,na="")
+
+ write.csv(data2,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_flatBoxes_JP_",currentDate,".csv",sep=""),row.names = F,na="")
+
+  write.csv(recrver,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Connect_prod_recr_veriBiospe_",currentDate,".csv",sep=""),row.names = F,na="")
+ 
+
+  #write.csv(recr.bio,"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Connect_prod_recr_veriBiospe_02132023.csv",row.names = F,na="")
+###for adding the formats to the variables 
+box_CID <- as.data.frame(as.numeric(sapply((strsplit(colnames(box_wl_flat),"d_")),tail,1)))
+box_CID$variable <- colnames(box_wl_flat)
+
+colnames(box_CID)[1] <-"CID"
+box_CID$CID <- ifelse(is.na(box_CID$CID), 0, box_CID$CID)
+
+box_CID_dd <- merge(box_CID, y[,c("Primary.Source","conceptId.2","conceptId.3","Variable.Name","Variable.Label","conceptId.4","Current.Format.Value")],by.x="CID",by.y="conceptId.3",all.x=TRUE)
+
+box_CID_dd$Variable.Name <- ifelse(is.na(box_CID_dd$Variable.Name), box_CID_dd$variable,box_CID_dd$Variable.Name)
+box_CID_dd$category<- ifelse(is.na(box_CID_dd$conceptId.4), 0,ifelse(!is.na(box_CID_dd$conceptId.4) &  box_CID_dd$conceptId.4 !=104430631, 2, 1))
+
+select1 <- box_CID_dd$variable[which(box_CID_dd$category==0)]
+yes_no <- box_CID_dd$variable[which(box_CID_dd$category==1)]
+box1 <- subset(box_wl_flat,select=select1) 
+colnames(box1) <- box_CID_dd$Variable.Name[which(box_CID_dd$category==0)]
+
+##for the categorical variables
+box1$BioPack_Courier_v1r0 <- ifelse(box_wl_flat$d_666553960==712278213, "FedEx",ifelse(box_wl_flat$d_666553960==149772928, "World Courier",NA))
+
+box_wl_flat$d_560975149 <- as.factor(box_wl_flat$d_560975149)
+d_560975149_CIDs <- as.data.frame(cbind(unique(y$conceptId.4[grepl(paste(levels(box_wl_flat$d_560975149),collapse="|"),y$conceptId.4)]),unique(trimws(sapply(strsplit(y$Current.Format.Value[grepl(paste(levels(box_wl_flat$d_560975149),collapse="|"),y$conceptId.4)], "="),tail,1)))))
+
+box1$d_560975149 <- plyr::mapvalues(box_wl_flat$d_560975149,from=d_560975149_CIDs$V1,to=d_560975149_CIDs$V2)
+colnames(box1)[which(colnames(box1)=="d_560975149") ]<- box_CID_dd$Variable.Name[which(box_CID_dd$variable=="d_560975149")]
+
+box_wl_flat$d_789843387 <- as.factor(box_wl_flat$d_789843387)
+d_789843387_CIDs <- as.data.frame(cbind(unique(y$conceptId.4[grepl(paste(levels(box_wl_flat$d_789843387),collapse="|"),y$conceptId.4)]),unique(trimws(sapply(strsplit(y$Current.Format.Value[grepl(paste(levels(box_wl_flat$d_789843387),collapse="|"),y$conceptId.4)], "="),tail,1)))))
+
+#box1$d_789843387 <- boxes$d_789843387 %>% mutate(d_789843387=factor(d_789843387)) 
+box1$d_789843387 <- plyr::mapvalues(box_wl_flat$d_789843387,from=d_789843387_CIDs$V1,to=d_789843387_CIDs$V2)
+colnames(box1)[which(colnames(box1)=="d_789843387") ]<- box_CID_dd$Variable.Name[which(box_CID_dd$variable=="d_789843387")]
+
+##for binary variables
+for (i in 1:length(yes_no)){
+  x <- yes_no[i]
+  
+  varname <- box_CID_dd$Variable.Name[grepl(x,box_CID_dd$variable)]
+  #type.labels <- dd$`Variable Label`[grepl(CID,dd$CID)]
+  check <- as.data.frame(box_wl_flat[,grepl(x, colnames(box_wl_flat))])
+  check$variable <- ifelse(check[,1]== 353358909, "Yes",ifelse(check[,1]==104430631,"No",NA))
+  colnames(check)[2] <- varname
+  box1 <-   cbind(box1,subset(check,select=varname))
+}
+
+
+#gsub("[^[:alnum:][:blank:]+?&/\\-]", "", c) #to remove any specific character in a variable in r
+
+box1 <-box1 <- box1 %>% mutate(d_238268405=gsub("^[:alnum:][:blank:]","",d_238268405),
+                          d_238268405_1=case_when(substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"121149986"~"Crushed",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"200183516" ~"Vials - Incorrect Material Type",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"289322354" ~ "Material Thawed",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"387564837" ~ "Damaged Vials",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"399948893" ~ "Vials - Missing Labels",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"405513630" ~ "Cold Packs - none",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"442684673" ~ "Participant Refusal",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"595987358" ~ "Cold Packs - warm",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"613022284" ~ "No Refrigerant",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"631290535" ~ "Vials - Empty",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"678483571" ~ "Damaged Container (outer and/or inner)",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"679749262" ~ "Package in good condition",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"842171722" ~ "No Pre-notification",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"847410060" ~ "Improper Packaging",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"853876696" ~ "Manifest - not provided",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	 "909529446" ~ "Cold Packs - insufficient",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"922995819" ~ "Manifest/Paperwork/Vial information do not match",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"933646000" ~ "Other- Package Condition",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),2,10)==	"958000780" ~ "Shipment Delay"),
+                          d_238268405_2=case_when(substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"121149986"~"Crushed",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"200183516" ~"Vials - Incorrect Material Type",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"289322354" ~ "Material Thawed",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"387564837" ~ "Damaged Vials",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"399948893" ~ "Vials - Missing Labels",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"405513630" ~ "Cold Packs - none",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"442684673" ~ "Participant Refusal",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"595987358" ~ "Cold Packs - warm",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"613022284" ~ "No Refrigerant",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"631290535" ~ "Vials - Empty",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"678483571" ~ "Damaged Container (outer and/or inner)",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"679749262" ~ "Package in good condition",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"842171722" ~ "No Pre-notification",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"847410060" ~ "Improper Packaging",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"853876696" ~ "Manifest - not provided",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	 "909529446" ~ "Cold Packs - insufficient",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"922995819" ~ "Manifest/Paperwork/Vial information do not match",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"933646000" ~ "Other- Package Condition",
+                                                  substring(gsub("^[:alnum:][:blank:]","",d_238268405),12,20)==	"958000780" ~ "Shipment Delay"))
+ 
+box1<- box1 %>% mutate(BioPack_ShipCondtion_v1r0=ifelse(is.na(d_238268405_2), d_238268405_1, paste(d_238268405_1,d_238268405_2,sep=",")))
+write.csv(box1,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Formatted_prod_flatBoxes_JP_",currentDate,".csv",sep=""),row.names = F,na="") 
+  ###to get the formats and variable names from DD
+ 
+
+factor_cid <-function(var,data){
+  var <- as.factor(var)
+  var_CIDs <- as.data.frame(cbind(unique(y$conceptId.4[grepl(paste(levels(var),collapse="|"),y$conceptId.4)]),unique(trimws(sapply(strsplit(y$Current.Format.Value[grepl(paste(levels(var),collapse="|"),y$conceptId.4)], "="),tail,1)))))
+  
+  var <- plyr::mapvalues(var,from=var_CIDs$V1,to=var_CIDs$V2)
+}
+
+biospe_CID <- as.data.frame(sapply((strsplit(colnames(biospe),"d_")),tail,1))
+colnames(biospe_CID)[1] <- "CID"
+biospe_CID$variable <- names(biospe)
+biospe_CID_dd <- merge(biospe_CID, y[,c("Primary.Source","conceptId.2","conceptId.3","Variable.Name","Variable.Label","conceptId.4","Current.Format.Value")],by.x="CID",by.y="conceptId.3",all.x=TRUE)
+
+biospe_CID_dd <- biospe_CID_dd %>% mutate(category = case_when(conceptId.4 == 104430631~1, 
+                                                                 !is.na(conceptId.4) & conceptId.4 !=104430631 ~ 2,
+                                                                 is.na(conceptId.4) ~0),
+                                          firstCID = sapply(strsplit(variable,"_"),"[",2),
+                                          label.1st = case_when(sapply(strsplit(variable,"_"),"[",2) == "973670172"  ~ "UrineTube1",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "143615646"  ~ "MM Tube1",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "299553921"  ~ "SS Tube1",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "703954371"  ~ "SS Tube2",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "454453939"  ~ "EDTA Tube1",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "838567176"  ~ "Heparin Tube1",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "652357376"  ~ "ACD Tube1",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "677469051"  ~ "EDTA Tube2",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "683613884"  ~ "EDTA Tube3",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "376960806"  ~ "SS Tube3",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "232343615"  ~ "SS Tube4",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "589588440"  ~ "SS Tube5",
+                                                                sapply(strsplit(variable,"_"),"[",2) == "958646668"  ~ "Heparin Tube2")) 
+
+biospe_CID_dd$new.varname <- ifelse(is.na(biospe_CID_dd$label.1st), biospe_CID_dd$Variable.Name,paste(biospe_CID_dd$label.1st,biospe_CID_dd$Variable.Name,sep="_"))
+biospe_CID_dd$variable[is.na(biospe_CID_dd$new.varname)]
+#"d_611091485" "Connect_ID"  "date"        "id"          "Site"        "siteAcronym" "token"       
+biospe1 <- NULL
+select0 <- biospe_CID_dd$variable[which(biospe_CID_dd$category==0 & !is.na(biospe_CID_dd$Variable.Name))]
+select2 <- biospe_CID_dd$variable[which(biospe_CID_dd$category==2)]
+yes_no <- biospe_CID_dd$variable[which(biospe_CID_dd$category==1)]
+biospe1 <- subset(biospe,select =c("Connect_ID","token","siteAcronym","date",select0,select2))
+n<- length(select0)
+colnames(biospe1)[which(colnames(biospe1) %in% select0)] <-  biospe_CID_dd$new.varname[which(biospe_CID_dd$category==0 & !is.na(biospe_CID_dd$Variable.Name))]
+
+
+for (i in 1: length(select2)){
+  eval(parse(text=paste("biospe1$",select2[i],"<-factor_cid(biospe1$",select2[i],")",sep="")))
+}
+colnames(biospe1)[which(colnames(biospe1) %in% select2)] <-  biospe_CID_dd$new.varname[which(biospe_CID_dd$category==2)]
+
+for (i in 1:length(yes_no)){
+  x <- yes_no[i]
+  
+  varname <- biospe_CID_dd[grepl(yes_no[i],biospe_CID_dd$variable),]$new.varname
+  #type.labels <- dd$`Variable Label`[grepl(CID,dd$CID)]
+  check <- as.data.frame(biospe[,x])
+  check$variable <- ifelse(check[,1]== 353358909, "Yes",ifelse(check[,1]==104430631,"No",NA))
+  colnames(check)[2] <- varname
+  biospe1 <-   cbind(biospe1,subset(check,select=varname))
+}
+
+write.csv(biospe1,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Connect_prod_Biospe_Formats",currentDate,".csv",sep="_"),row.names = F,na="")
+
+###biospecimen data
+
+
+recrver_CID <- as.data.frame(sapply((strsplit(colnames(recrver),"d_")),tail,1))
+colnames(recrver_CID)[1] <- "CID"
+recrver_CID$variable <- names(recr.bio)
+recrvar_CID_dd <- merge(recrver_CID, y[,c("Primary.Source","conceptId.2","conceptId.3","Variable.Name","Variable.Label","conceptId.4","Current.Format.Value")],by.x="CID",by.y="conceptId.3",all.x=TRUE)
+
+recrvar_CID_dd <- recrvar_CID_dd %>% mutate(category = case_when(conceptId.4 == 104430631~1, 
+                                                                 !is.na(conceptId.4) & conceptId.4 !=104430631 ~ 2,
+                                                                 is.na(conceptId.4) ~0),
+                                            Variable.Name=ifelse(is.na(Variable.Name), variable, Variable.Name)) 
+
+recrbio1 <- NULL
+select0 <- recrvar_CID_dd$variable[which(recrvar_CID_dd$category==0)]
+select2 <- recrvar_CID_dd$variable[which(recrvar_CID_dd$category==2)]
+yes_no <- recrvar_CID_dd$variable[which(recrvar_CID_dd$category==1)]
+recrbio1 <- subset(recr.bio,select =c(select0,select2))
+colnames(recrbio1)[which(colnames(recrbio1) %in% select0)] <-  recrvar_CID_dd$Variable.Name[which(recrvar_CID_dd$category==0)]
+n<- length(select0)
+
+ 
+for (i in 1: length(select2)){
+  eval(parse(text=paste("recrbio1$",select2[i],"<-factor_cid(recrbio1$",select2[i],")",sep="")))
+  colnames(recrbio1)[n+i] <- recrvar_CID_dd$Variable.Name[grepl(select2[i],recrvar_CID_dd$variable)] 
+}
+
+for (i in 1:length(yes_no)){
+  x <- yes_no[i]
+  varname <- recrvar_CID_dd$Variable.Name[grepl(x,recrvar_CID_dd$variable)]
+  #type.labels <- dd$`Variable Label`[grepl(CID,dd$CID)]
+  check <- as.data.frame(recr.bio[,grepl(x, colnames(recr.bio))])
+  check$variable <- ifelse(check[,1]== 353358909, "Yes",ifelse(check[,1]==104430631,"No",NA))
+  colnames(check)[2] <- varname
+  recrbio1 <-   cbind(recrbio1,subset(check,select=varname))
+}
+
+write.csv(recrbio1,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Connect_prod_recr_veriBiospe_Formats_",currentDate,".csv",sep=""),row.names = F,na="")
+
