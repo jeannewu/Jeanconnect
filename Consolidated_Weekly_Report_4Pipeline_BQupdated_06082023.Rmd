@@ -142,7 +142,7 @@ refwd_date1 <- c("d_657475009","d_982105411","d_390198398","d_808663245","d_2623
   recruit.times <- c("d_335767902","d_471593703","d_454445267","d_430551721","d_914594314")
 
 ##awareness,ca.hist.var,optout_reasons,and campaign type would be done individually
-var.list <- unique(c("d_512820379",rfact_ls,bio.col,clc.bldtm,clc.urinetm,incentive.vars,modules,recruit.times,ref.wd,
+var.list <- unique(c("d_512820379",rfact_ls,bio.col,clc.bldtm,clc.urinetm,incentive.vars,modules,recruit.times,ref.wd,ca.hist.var,
                      refwd_date1,refwd_type1,refwd_reasons,refwd.main1,"d_821247024","d_230663853","d_919254129","d_699625233",
                      "state_d_684926335","state_d_849518448","state_d_119643471","d_827220437","d_914594314","d_471593703",
                      "state_d_706256705","state_d_435027713","state_d_934298480","state_d_444699761","state_d_953614051",
@@ -1341,20 +1341,23 @@ ca.hist
 # 7: 650597106                   Cancer Year    RcrtUP_CancerYr_v1r0
 
 ca.var.hist <- colnames(data)[grepl("266952173|452166062|494982282|650597106|547895941",colnames(data))]
-ca_hist <- data %>% filter(.,d_699625233==353358909 & d_452166062 == 353358909 ) %>% select(token,Connect_ID,d_821247024, d_512820379, site, age,sex, race,d_699625233,d_452166062,all_of(ca.var.hist)) %>%mutate(`Verification status`= case_when(d_821247024 == 875007964 ~ "Not yet verified",
-                                             d_821247024 == 197316935  ~ "Verified",
-                                             d_821247024 ==  219863910 ~ "Cannot be verified",
-                                             d_821247024 ==  922622075 ~ "Duplicate",
-                                             d_821247024 ==  160161595 ~ "Outreach timed out"),
-           `Recruitment type` =case_when(d_512820379 == 486306141 ~ "Active",
-                                                d_512820379 == 854703046 ~ "Passive"),
-           `User Profile submitted` = case_when(d_699625233 ==353358909 ~ "Yes",
-                                                d_699625233 ==104430631 ~ "No"),
-           `Previous Cancer` = case_when(d_452166062 ==353358909 ~ "Yes",
-                                         d_452166062 ==104430631 ~ "No"),
-            RcrtV_CStatusMatch_v1r0 = case_when(state_d_547895941== 539025306 ~ "Criterium not met",
-                                               state_d_547895941== 427405444 ~ "Criterium met")) %>% 
+
+           
+  ca_hist <- dt %>% filter(.,d_699625233=='353358909' & d_452166062 == '353358909' ) %>% select(token,Connect_ID,d_821247024, d_512820379, Site, age,sex, race,d_699625233,d_452166062,all_of(ca.var.hist)) %>%mutate(`Verification status`= case_when(d_821247024 == '875007964' ~ "Not yet verified",
+                                             d_821247024 == '197316935'  ~ "Verified",
+                                             d_821247024 ==  '219863910' ~ "Cannot be verified",
+                                             d_821247024 ==  '922622075' ~ "Duplicate",
+                                             d_821247024 ==  '160161595' ~ "Outreach timed out"),
+           `Recruitment type` =case_when(d_512820379 == '486306141' ~ "Active",
+                                                d_512820379 == '854703046' ~ "Passive"),
+           `User Profile submitted` = case_when(d_699625233 =='353358909' ~ "Yes",
+                                                d_699625233 =='104430631' ~ "No"),
+           `Previous Cancer` = case_when(d_452166062 =='353358909' ~ "Yes",
+                                         d_452166062 =='104430631' ~ "No"),
+            RcrtV_CStatusMatch_v1r0 = case_when(state_d_547895941== '539025306' ~ "Criterium not met",
+                                               state_d_547895941== '427405444' ~ "Criterium met")) %>%
   dplyr::rename(`Cancer Year` = d_650597106, `Cancer Type`=d_266952173, `Cancer Comments`= d_494982282)
+       
 
 ##May 4, 2023, as Amelia requested, Table: New table, please place under table 29 so will be = Table 30. Number of Active Verified Participants that 
 # Enrolled Passively
@@ -1512,7 +1515,7 @@ table43 <-  tbl(con,"participants_JP")  %>%
                                      "Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado",
                                      "Kaiser Permanente Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest"))) 
 
-table43_Totalactivecamp[which(is.na(table43_Totalactivecamp$state_d_667474224)), c("Connect_ID","state_d_667474224","Site","age","race","sex")] #to double check anyones without active compaign camp info.
+#table43_Totalactivecamp[which(is.na(table43_Totalactivecamp$state_d_667474224)), c("Connect_ID","state_d_667474224","Site","age","race","sex")] #to double check anyones without active compaign camp info.
 
 table43_Totalactivecamp <- table43 %>% select(Site, active_camptype) %>% 
   tbl_cross( row=Site,
@@ -2439,7 +2442,7 @@ library(scales)
 ##for the verification part with verification data
 veri_resp <- data[which(data$d_821247024 == 197316935 ),time.list] %>%
   mutate(verified_time = ymd_hms(d_914594314),
-         recru_time = ymd_hms(ifelse(veri_resp$d_471593703 =="NA",veri_resp$d_914594314, veri_resp$d_471593703)),
+         recru_time = ymd_hms(ifelse(d_471593703 =="NA",d_914594314, d_471593703)),
          elgible.time = ymd_hms(d_130371375_d_266600170_d_787567527),
          recrstart.date = as_date(min(as.POSIXct(d_471593703),na.rm=TRUE)),
          recrstart.Sunday = as_date(ifelse(wday(as.Date(min(ymd_hms(d_471593703),na.rm=TRUE))) == 1, as.Date(min(ymd_hms(d_471593703),na.rm=TRUE)),
@@ -2990,7 +2993,7 @@ table43_Totalactivecamp %>% kable_styling(latex_options = "scale_down")%>% lands
 colnames(campaign.combo)[2:17] <- sapply(strsplit(colnames(campaign.combo)[2:17],"_"),tail,1)
 knitr::kable(as.data.frame(campaign.combo[ ,c(17,1:8,13:16,11,12,9:10,18)]),caption = 'Table 44. Success Rate by Campaign Type for Active Recruits',row.names=FALSE, booktabs = T, linesep = "", format.args = list(big.mark = ","), align = c("l", "c", "c","c", "c", "c", "c", "c", "c", "c", "c","c", "c", "c", "c", "c", "c","c"), col.names=c("Site","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Total Active Recruits")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:9)) %>% add_header_above(c(" " = 1, "Aging out of Study" = 2, "Demographic Group" = 2, "Geographic Group"=2, "Non-Screening Appointment" =2, "Random" = 2, "Screening Appointment" = 2, "Other" = 2,"None of These Apply" = 2, " "=1)) %>% landscape() %>% footnote(general='Frequency (%) of Total Active Recruits of each Campaign Type by Site',general_title = "Note:", footnote_as_chunk = T)
 
-knitr::kable(optout1.sites[,c(9,4,8,7)],caption = 'Table 45. Total Number of Pre-Consent Opt-Outs by Site',col.names=c("Site","Total Opt-Outs", "Percent %", "Total Active Recruits"), format.args = list(big.mark = ","), row.names=FALSE, align=c("l","c","c","c")) %>% add_indent(c(1:9)) %>% footnote(general=c('Frequency (%) of Overall Active Recruits of Connect.','KP not yet sending Opt-Out data'),general_title = "Note:", footnote_as_chunk = T)
+knitr::kable(optout_pct[,c(1,3,5,6)],caption = 'Table 45. Total Number of Pre-Consent Opt-Outs by Site',col.names=c("Site","Total Opt-Outs", "Percent %", "Total Active Recruits"), format.args = list(big.mark = ","), row.names=FALSE, align=c("l","c","c","c")) %>% add_indent(c(1:9)) %>% footnote(general=c('Frequency (%) of Overall Active Recruits of Connect.','KP not yet sending Opt-Out data'),general_title = "Note:", footnote_as_chunk = T)
 
 Table46_precst_act1 
 
