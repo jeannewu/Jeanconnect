@@ -1,6 +1,6 @@
 ---
 title: "Connect Weekly Operations Metrics"
-date: "`r format(Sys.Date(), '%d %B, %Y')`"
+date: "`r format(Sys.Date()-1, '%d %B, %Y')`"
 author: "JingWU"
 
 output:
@@ -18,7 +18,7 @@ output:
 
 header-includes: \usepackage[labelformat=empty]{caption}
 
-knit: (function(inputFile, encoding) {rmarkdown::render("~/Documents/GitHub/Jeanconnect/Consolidated_Weekly_Report_4Pipeline_BQupdated_06082023.Rmd", output_file=paste("~/Documents/GitHub/Jeanconnect/Connect_WeeklyOperationsMetrics_", Sys.Date(), ".pdf", sep=""))})
+knit: (function(inputFile, encoding) {rmarkdown::render("~/Documents/GitHub/Jeanconnect/Consolidated_Weekly_Report_4Pipeline_BQupdated_06082023.Rmd", output_file=paste("~/Documents/GitHub/Jeanconnect/Connect_WeeklyOperationsMetrics_", Sys.Date()-1, ".pdf", sep=""))})
 
 ---
 ## General Information
@@ -29,7 +29,7 @@ The analytic data set for this report is created from the“nih-nci-dceg-connect
 
 All variables are stored as CIDs which can be found in the master dictionary: “https:// episphere.github.io/conceptGithubActions/aggregate.json” 
 
-This report contains data as of `r format(Sys.Date(), '%d %B, %Y')`. Atypical records under investigation are not included in the metrics tables and may result in Total columns that do not add up to 100%
+This report contains data as of `r format(Sys.Date()-1, '%d %B, %Y')`. Atypical records under investigation are not included in the metrics tables and may result in Total columns that do not add up to 100%
 
 ```{r setup, include=FALSE,eval=TRUE,echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -53,6 +53,7 @@ library(listr) ###to work on a list of vector, files or..
 #library(sqldf) ##sql
 #library(lubridate) ###date time it is already masked in 'tidyverse'
 library(ggplot2) ###plots
+library(ggrepel)
 library(ggpubr) ###for the publications of plots
 library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
 library(gridExtra)
@@ -79,7 +80,7 @@ library(rio)
 ```{r, include=FALSE,eval=TRUE,echo=FALSE}
 #to download the recruitment data and corresponding Connect master DD
 options(knitr.table.format = "latex")
-currentDate <- Sys.Date()
+currentDate <- Sys.Date()-1
 
 #dictionary <- rio::import("https://github.com/episphere/conceptGithubActions/blob/master/aggregate.json",format = "json")
 dictionary <- rio::import("https://episphere.github.io/conceptGithubActions/aggregate.json",format = "json")
@@ -181,8 +182,8 @@ for (i in 1: length(cnames)){
    recr_signin1[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
 }
 
-     #saveRDS(recr_signinl1,paste("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/recruit_signin",currentDate,".rds", sep=""))
-   #recr_signin1 <- readRDS("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/recruit_signin2023-06-05.rds" )
+   #  saveRDS(recr_signin1,paste("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/recruit_signin",currentDate,".rds", sep=""))
+   #recr_signin1 <- readRDS("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/recruit_signin2023-07-31.rds" )
 
 ```
 
@@ -223,7 +224,7 @@ data <- data %>% mutate(race = case_when(state_d_684926335 == 635279662 | state_
                                                     state_d_667474224 == 351257378 ~ "Demographic Group",
                                                     state_d_667474224 == 647148178 ~ "Aging out of study",
                                                     state_d_667474224 == 834544960 ~ "Geographic group",
-                                                    state_d_667474224 == 682916147 ~ "Post-screening appointment",
+                                                    state_d_667474224 == 682916147 ~ "Post-Screening Selection",
                                                     state_d_667474224 == 153365143 ~ "Technology adapters",
                                                     state_d_667474224 == 663706936 ~ "Low-income/health professional shortage areas",
                                                     state_d_667474224 == 181769837 ~ "Other",
@@ -847,7 +848,33 @@ table9_verifiedtype <-  data[which(data$d_821247024 == 197316935),] %>%
    #   d_167958071	as	BioFin_BaseUrineCol_v1r0, /*Baseline Urine collected*/
    #   d_684635302	as	BioFin_BaseMouthCol_v1r0, /*	Baseline MW Collected*/
     ###updated May 4, 2023: to distinguish KP and non KP sites on the biospecimen collections:(no MW and with MW)
-   
+ ##updated Jul. 8, 2023,  Table or Figure title:
+# Operations Report:
+# (1) Figure 3: Total Expected Recruits vs Actual Verified Recruitments vs. Numbers of Blood Collections
+# (2) Table 13. Completion of Baseline Survey and Baseline Samples Among Verified Participants.
+# Weekly Log/Connect Totals by Week Reports for All Sites and Individual Sites:
+# (3) Cumulative Completed All Participant Study Activities
+# (4) Completed All Participant Study Activity Response Ratio among Invited = Completed All Activities/ Invited
+# (5) Completed All Participant Study Activity Response Ratio among Verified = Completed All Activities/ Verified
+# (6) Completed all Participant Study Activities per week
+# 
+# Variables needed (include variable name and Concept ID):
+# Blood: BioFin_BaseBloodCol_v1r0 (CID 878865966)
+# AND
+# Initial Survey: SMMet_BaseSrvCompl_v1r0 (CID 100767870)
+# Jing, we would like to change how we are calculating and defining "completes" for all sites. Before, we were defining "completes" where KP sites=initial survey + blood and urine donation only and all research sites =initial survey + blood, urine and mouthwash donation. To simplify and standardize the definition across all sites, we would like to change this definition to just be complete=initial survey + blood only. Urine and mouthwash will not be taken into consideration at all anymore. This will require changes to the metrics noted above, two metrics in the Operations Report and then multiple metrics in the Weekly Logs (also called the Connect Totals by Week). I have included the two variables that should be used to define completes above.
+
+# Addtl Changes:
+# (1) In Figure 3, this will affect the pink calculation. Can you also rename the label from 'Initial Srv+Samples' to 'Initial Srv+Blood'?
+# (2) In Table 13, can you also change the footnote to state: "Completion=yes if all 4 sections of the initial survey are completed and blood is collected."
+# For the Weekly Log metrics that I noted above, all 4 metrics (numbers 3-6) will also need relabeling. Can you change it to 'Completed BL Survey+Blood'. See below.
+# (3) Cumulative Completed BL Survey+Blood
+# (4) Completed BL Survey+Blood Response Ratio among Invited = Completed BL Survey+Blood/ Invited
+# (5) Completed BL Survey+Blood Response Ratio among Verified = Completed BL Survey+Blood/ Verified
+# (6) Completed BL Survey+Blood per week
+# 
+# Please let me know if you have any questions and when you are ready for me to review. Please do not post these updates into the ALL folder until reviewed and approved by the CCC.
+
    
    data <- data %>% 
      mutate(biospeDonation = ifelse(d_878865966 %in% c(104430631,NA)  & d_167958071 %in% c(104430631,NA) & d_684635302 %in% c(104430631,NA),"No Sample Donations",
@@ -856,7 +883,9 @@ table9_verifiedtype <-  data[which(data$d_821247024 == 197316935),] %>%
                                     biospeDonation == "No Sample Donations" | ( biospeDonation == "Completed Some but Not All 3 Sample Donations" &  d_173836415_d_266600170_d_592099155 %in% c(534621077,NA)) | d_173836415_d_266600170_d_592099155==664882224 & d_878865966 %in% c(104430631, NA) | d_167958071 %in% c(104430631, NA) ~ 0),
          Module.complete = ifelse(d_100767870==353358909,"Complete","NotComplete"),
          surveybio_complete = case_when(d_100767870==353358909 & biospeComplete==1 ~ "Yes",
-                                     d_100767870 == 104430631  | biospeComplete %in% c(0,NA) ~ "No" ))
+                                     d_100767870 == 104430631  | biospeComplete %in% c(0,NA) ~ "No" ),
+         surveybld_complete = case_when(d_100767870==353358909 & d_878865966 == 353358909 ~ "Yes",
+                                     d_100767870 == 104430631  | d_878865966 %in% c(104430631,NA) ~ "No" ))
    
 data$surveybio_complete <- factor(data$surveybio_complete,levels=c("Yes","No"),order=TRUE)
   table13_surveycomplt <- data %>% filter(d_821247024 == 197316935) %>% 
@@ -875,9 +904,28 @@ data$surveybio_complete <- factor(data$surveybio_complete,levels=c("Yes","No"),o
     #italicize_levels() %>% 
     modify_header(stat_0 = "Total Verified \n Participants") %>%
     modify_caption("Table 13. Completion of Baseline Survey and Baseline Samples Among Verified Participants.") %>%
-    #modify_footnote(all_stat_cols() ~ "Note: Completion=yes if all 4 sections of the initial survey are completed and samples donated (for research collections: urine, mouthwash, and any blood is collected; for clinical collections: urine and any blood collected).") %>%
+     modify_footnote(all_stat_cols() ~ "Note: Completion=yes if all 4 sections of the initial survey are completed and samples donated (for research collections: urine, mouthwash, and any blood is collected; for clinical collections: urine and any blood collected).") %>%
     as_kable_extra(escape = FALSE, addtl_fmt = TRUE) 
 
+data$surveybld_complete <- factor(data$surveybld_complete,levels=c("Yes","No"),order=TRUE)
+  table13b_surveycomplt <- data %>% filter(d_821247024 == 197316935) %>% 
+   dplyr::select(site, surveybld_complete) %>% tbl_cross(
+     row = site,
+     col = surveybld_complete,
+     label = list(surveybld_complete ~ "Completion of Baseline Survey \nand Blood Collections",site~"Site"),
+     percent = "row",
+     digits=c(0,2),
+     margin_text="Total Verified Participants")
+  
+  table13b_surveycomplt[["table_body"]]$stat_0 <- sapply(strsplit(table13b_surveycomplt[["table_body"]]$stat_0," "),"[",1) 
+    
+  table13b_surveycomplt <- table13b_surveycomplt %>%
+    #bold_labels() %>%
+    #italicize_levels() %>% 
+    modify_header(stat_0 = "Total Verified \n Participants") %>%
+    modify_caption("Table 13. Completion of Baseline Survey and Baseline Blood Among Verified Participants.") %>%
+    # modify_footnote(all_stat_cols() ~ "Note: Completion=yes if all 4 sections of the initial survey are completed and blood is collected.") %>%
+    as_kable_extra(escape = FALSE, addtl_fmt = TRUE) 
 
 ###Tables 14 (Weekly table 24,25:34) Completion of Baseline Activities among Verified Participants of All sites and each site individually,
 data$basesvcomplt <- ifelse(data$d_949302066 %in% c(615768760,972455046, NA) ,"None",
@@ -1359,7 +1407,9 @@ ca.var.hist <- colnames(data)[grepl("266952173|452166062|494982282|650597106|547
            `Previous Cancer` = case_when(d_452166062 =='353358909' ~ "Yes",
                                          d_452166062 =='104430631' ~ "No"),
             RcrtV_CStatusMatch_v1r0 = case_when(state_d_547895941== '539025306' ~ "Criterium not met",
-                                               state_d_547895941== '427405444' ~ "Criterium met")) %>%
+                                               state_d_547895941== '427405444' ~ "Criterium met"),
+           RcrtUP_SubmitTime_v1r0 = ymd_hms(d_430551721),
+           RcrtSI_TypeTime_v1r0 = ymd_hms(d_471593703)) %>%
   dplyr::rename(`Cancer Year` = d_650597106, `Cancer Type`=d_266952173, `Cancer Comments`= d_494982282)
        
 
@@ -1496,7 +1546,7 @@ table43 <-  tbl(con,"participants_JP")  %>%
                                      state_d_667474224 == '351257378' ~ "Demographic Group",
                                      state_d_667474224 == '647148178' ~ "Aging out of study",
                                      state_d_667474224 == '834544960' ~ "Geographic group",
-                                     state_d_667474224 == '682916147' ~ "Post-screening appointment",
+                                     state_d_667474224 == '682916147' ~ "Post-Screening Selection",
                                      state_d_667474224 == '153365143' ~ "Technology adapters",
                                      state_d_667474224 == '663706936' ~ "Low-income/health professional shortage areas",
                                      state_d_667474224 == '181769837' ~ "Other",
@@ -1532,6 +1582,7 @@ table43_Totalactivecamp <- table43 %>% select(Site, active_camptype) %>%
 
 table43_Totalactivecamp[["table_body"]]$stat_0 <- sapply(strsplit(table43_Totalactivecamp[["table_body"]]$stat_0," "),"[",1) 
 
+activrecruit.n <- table43_Totalactivecamp[["table_body"]][c(2:11), c("label","stat_0")]
 
 table43_Totalactivecamp <- table43_Totalactivecamp %>%
   #bold_labels() %>%
@@ -1556,9 +1607,11 @@ table43_Totalactivecamp
 
 #Table 44 (Weekly Table 9). Number ratio of the success campaign verified among recruits
  ##for successul active campaign recrruits as the active verified by each campaign type 
-#data$active_camptype <- factor(data$active_camptype,levels=c("Random","Screening appointment","Non-screening appointment","Demographic Group","Aging out of study","Geographic group","Post-screening appointment","Technology adapters","Low-income/health professional shortage areas","Other","None of these apply","NA/Unknown"))
+#data$active_camptype <- factor(data$active_camptype,levels=c("Random","Screening appointment","Non-screening appointment","Demographic Group","Aging out of study","Geographic group","Post-Screening Selection","Technology adapters","Low-income/health professional shortage areas","Other","None of these apply","NA/Unknown"))
 
 #data$active_camptype <- droplevels(data$active_camptype)
+table43$active_camptype <- factor(table43$active_camptype, levels=c("Aging out of study","Demographic Group", "Geographic group","Non-screening appointment", "None of these apply", "Random","Screening appointment", "Post-screening appointment", "Technology adapters",  "Low-income/health professional shortage areas", "Other", "NA/Unknown"))
+table43$active_camptype <- droplevels(table43$active_camptype)
 
 tmp <- as.data.frame(xtabs(~Site+Rcrt_Verified_v1r0+active_camptype,data=table43))
 tmp$n_site_camptype <- ave(tmp$Freq,tmp[,c("Site","active_camptype")], FUN=cumsum)
@@ -1577,8 +1630,8 @@ total.veri_pct <- pct_tb(table43$active_camptype, table43$Rcrt_Verified_v1r0)
 total.freq0 <- cbind(total.freq,t(paste0(round(100*total.veri_pct$pct_353358909[1:8],2)," %")))
 colnames(total.freq0)[10:ncol(total.freq0)] <- paste0(rownames(total.veri_pct)[1:8],"_pct")
 
-campaign.combo <- rbind(act.veri.camp,total.freq0)
-campaign.combo$`Total Active Recruits` <- Table3$Total.Active.Recruits
+campaign.combo <- bind_rows(act.veri.camp,total.freq0)
+campaign.combo$`Total Active Recruits` <- activrecruit.n[,2]
 
 new_order <- sort(colnames(campaign.combo)[-1])
 campaign.combo0 <- subset(campaign.combo,select=c("Site",new_order))
@@ -1727,7 +1780,7 @@ colnames(Table47_optreasons)[c(2,12)] <- c("Opt-Out Reasons","Total Opt-Outs")
 
 Table47_optreasons$`Total Opt-Outs` <- sapply(strsplit(Table47_optreasons$`Total Opt-Outs`, " "), "[[",1)
 
-Table47_optreasons[34,2] <- "Total Opt-Outs"
+Table47_optreasons[nrow(Table47_optreasons),2] <- "Total Opt-Outs"
 #optout_reason1 <- colnames(optout1.sites)[c(6:17,19:32)]
 
 
@@ -2484,8 +2537,11 @@ verified.wk.all <- merge(verified.wk.active,verified.wk.total, by.x=c("Verified.
                          by.y = c("Verified.Sunday","Verified.Sunday.date"), all.y=TRUE)
 #verified.wk.all$Verified.Sunday.date[is.na(verified.wk.all$Verified.Sunday.date)]<- recrstart.date + verified.wk.all$verified.week*7
 recrui_wk_verified <- merge(recruit.wk.active,verified.wk.all, by.x=c("Week.Sunday"),by.y=c("Verified.Sunday"),all.x=TRUE,all.y=TRUE)
-recrui_wk_verified$Week.Sunday.date <- as_date(ifelse(is.na(recrui_wk_verified$Week.Sunday.date),recrui_wk_verified$Verified.Sunday.date,recrui_wk_verified$Week.Sunday.date))
-recrui_wk_verified[is.na(recrui_wk_verified)] <- 0
+recrui_wk_verified$Week.Sunday.date <- as_date(ifelse(is.na(recrui_wk_verified$Week.Sunday.date),recrui_wk_verified$Verified.Sunday.date,recrui_wk_verified$Week.Sunday.date), origin = lubridate::origin)
+
+# recrui_wk_verified <- recrui_wk_verified %>% mutate(vars(c("active_recruits","total_verifieds", "active_verifieds")) ~replace_na(.,0))
+  
+  recrui_wk_verified[is.na(recrui_wk_verified)] <- 0
 
 recrui_wk_verified <- recrui_wk_verified %>% arrange(Week.Sunday,Week.Sunday.date)
 
@@ -2519,9 +2575,9 @@ response_rate.plot <- ggplot(recrui_wk_verified,aes(x=as.Date(Week.Sunday.date))
   geom_area(aes(y=total_verified.cum),fill="lightblue") +  #the geom_line also can be applied#
   
   #geom_text(aes(as.Date("2021-09-17"),455, label="highest cumulative response rate=112.5%"),size = 3,color="blue")+
-  geom_line(aes(y=cum.total.response.rate*500), color="red") +
+  geom_line(aes(y=cum.total.response.rate*1000), color="red") +
   #geom_text(aes(y=cumulative.response.rate*4),color="red") +
-  scale_y_continuous(name="# Verified",   breaks=breaks, sec.axis = sec_axis( ~ . /500 , name = "Cumulative Response Rate (%)")) +
+  scale_y_continuous(name="# Verified",   breaks=breaks, sec.axis = sec_axis( ~ . /1000 , name = "Cumulative Response Proportion (%)",breaks = seq(0,10,2.5))) +
   coord_cartesian(ylim =c(0,max_y)) +
   scale_x_date(date_breaks = "1 month",date_labels = "%m/%d/%Y",limit=c(as.Date("2022-01-01", origin = lubridate::origin),as.Date(currentDate, origin = lubridate::origin)),expand=c(0,0),name="Date of Recruitment")  +
   ggtitle("Number Overall Verified & Response Rate Over Time")+
@@ -2593,9 +2649,17 @@ Fig2_verified_time <- ggplot(veri_allsites,aes(y=Total.verified, x=as.Date(Verif
    group_by(d_827220437) %>%
    dplyr::summarize(`Blood`=n())
  
- complete.site <- filter(data,surveybio_complete=="Yes" & d_821247024 == 197316935 &d_827220437 >0) %>% 
+ survey.site <- filter(data,d_100767870==353358909 & d_821247024 == 197316935 &d_827220437 >0) %>% 
+  group_by(d_827220437) %>%
+  dplyr::summarize(Surveys=n())
+
+ # complete.site <- filter(data,surveybio_complete=="Yes" & d_821247024 == 197316935 &d_827220437 >0) %>% 
+ #   group_by(d_827220437) %>%
+ #   dplyr::summarize(`Initial Srv+Samples`=n())
+
+  complete.site <- filter(data,surveybld_complete=="Yes" & d_821247024 == 197316935 &d_827220437 >0) %>%
    group_by(d_827220437) %>%
-   dplyr::summarize(`Initial Srv+Samples`=n())
+   dplyr::summarize(`Survey + Blood`=n())
  
 ##May 4, 2023, as Amelia request
 #  Variables Needed: Variables that show number 'complete'
@@ -2605,8 +2669,8 @@ Fig2_verified_time <- ggplot(veri_allsites,aes(y=Total.verified, x=as.Date(Verif
 # 
 # Notes: Hi Jing, the KPs requested that we add to this bar chart an additional category to track 'completes' against the TO6 goals. All the other categories will stay the same but you will need to add a 4th category for completes. Please use the same variables to calculate this that you used in the weekly log. Please also add a footnote that states: 'Completed=all 4 sections of the initial survey + samples donated (for research collections: urine, mouthwash, and any blood is collected; for clinical collections: urine and any blood collected).
 
- recruit.site <- list(recruit.site,blood.site,complete.site) %>% reduce(full_join, by="d_827220437")
- 
+ recruit.site <- list(recruit.site,blood.site,survey.site,complete.site) %>% reduce(full_join, by="d_827220437")
+
  # recruit_site <- data[which(data$d_512820379==486306141 & data$d_827220437 >0),] %>% 
  #   group_by(d_827220437) %>%
  #   dplyr::summarize(recruit_site=n())
@@ -2632,8 +2696,12 @@ Fig2_verified_time <- ggplot(veri_allsites,aes(y=Total.verified, x=as.Date(Verif
                                                            d_827220437 == 548392715  ~ "HFH",
                                                            d_827220437 == 657167265  ~ "SH",
                                                            d_827220437 == 809703864  ~ "UC",
-                                                           d_827220437 == 517700004 | d_827220437 == 181769837 ~ "NIH"))
- 
+                                                           d_827220437 == 517700004 | d_827220437 == 181769837 ~ "NIH"),
+                                         `Blood Only` = Blood - `Survey + Blood`,
+                                         `Survey Only` = Surveys - `Survey + Blood`,
+                                         `Verified, no Activities` = Verified-(Surveys + Blood - `Survey + Blood`),
+                                         Expected.toGo = Expected - Verified)
+
  # recrui.rate<-merge(recruit.site,response.site,by=c("d_827220437","verified_site"))
  # colnames(recrui.rate)[which(colnames(recrui.rate)=="verified_site")] <- "Verified"
  # recrui.rate$Verified <- as.numeric(recrui.rate$Verified)
@@ -2648,53 +2716,142 @@ Fig2_verified_time <- ggplot(veri_allsites,aes(y=Total.verified, x=as.Date(Verif
  # variable.name="Expected_verified.type",
  # value.name="Expected_Verified_n")
  
- recruit.site$Expected <- as.integer(recruit.site$Expected)
- recruit.site1 <- recruit.site %>% 
-      mutate(Site=Site,
-             Expected = as.character(Expected),
-             across(c("Verified","Blood","Initial Srv+Samples"), ~col_pct(.x, as.numeric(Expected))))
+#  recruit.site$Expected <- as.integer(recruit.site$Expected)
+#  recruit.site1 <- recruit.site %>% 
+#       mutate(Site=Site,
+#              Expected = as.character(Expected),
+#              across(c("Verified","Blood","Initial Srv+Samples"), ~col_pct(.x, as.numeric(Expected))))
+# 
+# 
+# verifed_expected <- melt(recruit.site1[,c("Expected","Verified","Site","Blood","Initial Srv+Samples")],id.vars="Site", measure.vars=c("Expected","Verified","Blood","Initial Srv+Samples"), variable.name="Expected Verified",
+#                          value.name="Expected_Verified_pct")
+# verifed_expected$Expected_Verified_n <- as.numeric(sapply(strsplit(gsub(",","", trimws(verifed_expected$Expected_Verified_pct))," "),"[",1))
+# 
+#  verifed_expected$`Expected Verified` <- factor(verifed_expected$`Expected Verified`, levels=c("Expected","Verified","Blood","Initial Srv+Samples"))
+# 
+# verifed_expected$Site <- factor(verifed_expected$Site,levels = c("KPCO","KPGA","KPHI","KPNW","HFH","HP","MF","SH","UC"))
+
+###July 26, 2023, the updated comments on the Fig3 from Amelia:
+# Plot title: Total number of expected under TO6 vs. actual Connect participants by site through DATE
+# Legend:
+#   Title: Completion Statuses
+# Categories:
+#   Expected
+# Red diamond, no outline. Add to legend.
+# Verified: (Blue, no diamond), black outline, no activities
+# 
+# Survey only:Green, no diamond, black outline
+# 
+# Blood only:Yellow, no diamond, black outline.
+# 
+# Survey + Blood: pink
+# Note: if other colors work better that’s fine. Suggest no red categories besides the expected one and pink for the survey+blood as that is the one they are trying to get to the red expected. Also all of them should have the same colored outline. Carry colors into the plots.
+# Number placement on the plots:
+#   Keep numbers horizonal but alternate number placement. Example below.
+# Expected: be directly in the middle, above diamond
+# Verified, no activities: right
+# Survey only: left
+# Blood only: right
+# Survey+ blood: left
+
+recruit.site$Expected.toGo <- as.integer(recruit.site$Expected.toGo)
+recruit.site$Expected <- as.integer(recruit.site$Expected)
+verifed_expected_n <- melt(recruit.site[,c("Expected.toGo","Verified, no Activities","Site","Survey Only","Blood Only","Survey + Blood")],id.vars="Site", 
+                           measure.vars=c("Expected.toGo","Verified, no Activities","Survey Only","Blood Only","Survey + Blood"), variable.name="Expected Verified",
+                           value.name="Expected_Verified_n")
+
+verifed_expected_n$Site <- factor(verifed_expected_n$Site,levels = c("KPCO","KPGA","KPHI","KPNW","HFH","HP","MF","SH","UC"))
 
 
-verifed_expected <- melt(recruit.site1[,c("Expected","Verified","Site","Blood","Initial Srv+Samples")],id.vars="Site", measure.vars=c("Expected","Verified","Blood","Initial Srv+Samples"), variable.name="Expected Verified",
-                         value.name="Expected_Verified_pct")
-verifed_expected$Expected_Verified_n <- as.numeric(sapply(strsplit(gsub(",","", trimws(verifed_expected$Expected_Verified_pct))," "),"[",1))
+verifed_expected_n <- verifed_expected_n  %>% group_by(Site) %>% arrange(Site,fct_rev(`Expected Verified`))%>% mutate(cum.count=cumsum(Expected_Verified_n),
+       label.count=cumsum(Expected_Verified_n)-0.1*Expected_Verified_n)
 
- verifed_expected$`Expected Verified` <- factor(verifed_expected$`Expected Verified`, levels=c("Expected","Verified","Blood","Initial Srv+Samples"))
+verifed_expected_n <- verifed_expected_n %>% 
+  mutate(Expected = case_when(Site == 'KPCO' ~ 1900, #KPCO#
+                              Site == 'KPGA' ~ 1300,#KPGA#
+                              Site == 'KPHI' ~ 790, #KPHI #
+                              Site == 'KPNW' ~ 1900, #KPNW#
+                              Site == 'MF' ~ 760, #Marshfield#
+                              Site == 'HP' ~ 2247, #HP#
+                              Site == 'HFH' ~ 1600, #HFHS#
+                              Site == 'SH' ~ 1015, #SH#
+                              Site == 'UC' ~ 2500 #UoCh# 
+  ))
 
-verifed_expected$Site <- factor(verifed_expected$Site,levels = c("KPCO","KPGA","KPHI","KPNW","HFH","HP","MF","SH","UC"))
+verifed_expected_n$`Expected Verified` <- gsub(".toGo", "",verifed_expected_n$`Expected Verified`)
+verifed_expected_n$Site <- factor(verifed_expected_n$Site,levels = c("KPCO","KPGA","KPHI","KPNW","HFH","HP","MF","SH","UC"))
+verifed_expected_n$`Expected Verified` <- factor(verifed_expected_n$`Expected Verified`, 
+                                                 levels=c("Survey + Blood","Blood Only","Survey Only","Verified, no Activities","Expected"))
 
-verified_expect_bld.plot <- ggplot(verifed_expected,aes(x=Site)) +
-  geom_bar(aes(y=Expected_Verified_n,color=`Expected Verified`,fill=`Expected Verified`),position="identity", stat="identity",alpha=0.2)+ 
-  geom_text(aes(y=Expected_Verified_n,label=Expected_Verified_pct,group=`Expected Verified`),size = 3,color="black",vjust = -0.20,position = position_dodge(width=-0.6),angle=-35)+
-  #geom_point(aes(y=Completion.rate*80),size=1.5, color=rateColor) +  
-  #geom_text(aes(y=Completion.rate*80,label=round(Completion.rate,2)),size=3,color="red",hjust= 0.5,vjust=0.8,position = position_dodge(width=1)) +
-  scale_fill_manual(values = c("white","yellow", "blue", "red") ) +
-  scale_y_continuous(name="Individuals, N", breaks=c(100,500,1000,1500,2000,2500,3000) )+
-  #,sec.axis = sec_axis( ~ . /80, 
-  #                     name = "Completion Rate of Baseline Modules&Biospecimen Collections, %",breaks=c(2,4,6,8,10)))+
-  labs( title=str_wrap(paste("Total Expected Recruits vs Actual Verified Recruitments vs. \nNumbers of Blood Collections till",currentDate, sep=" "),  60),
+verifed_expected_n <- verifed_expected_n  %>% group_by(Site) %>% arrange(Site,`Expected Verified`)%>% 
+  mutate(cum.count=cumsum(Expected_Verified_n),                                                                        label.count=cumsum(Expected_Verified_n) *1.02)
+
+verifed_expected_n1 <- verifed_expected_n %>% 
+  mutate(cum.Expected =ifelse(`Expected Verified` !="Expected", cum.count, NA ),
+         verified.n = ifelse(`Expected Verified` !="Expected",Expected_Verified_n, cumsum(Expected_Verified_n)))
+
+# verified_expect_bld.plot <- ggplot(verifed_expected,aes(x=Site)) +
+#   geom_bar(aes(y=Expected_Verified_n,color=`Expected Verified`,fill=`Expected Verified`),position="identity", stat="identity",alpha=0.2)+ 
+#   geom_text(aes(y=Expected_Verified_n,label=Expected_Verified_pct,group=`Expected Verified`),size = 3,color="black",vjust = -0.20,position = position_dodge(width=-0.6),angle=-35)+
+#   #geom_point(aes(y=Completion.rate*80),size=1.5, color=rateColor) +  
+#   #geom_text(aes(y=Completion.rate*80,label=round(Completion.rate,2)),size=3,color="red",hjust= 0.5,vjust=0.8,position = position_dodge(width=1)) +
+#   scale_fill_manual(values = c("white","yellow", "blue", "red") ) +
+#   scale_y_continuous(name="Individuals, N", breaks=c(100,500,1000,1500,2000,2500,3000) )+
+#   #,sec.axis = sec_axis( ~ . /80, 
+#   #                     name = "Completion Rate of Baseline Modules&Biospecimen Collections, %",breaks=c(2,4,6,8,10)))+
+#   labs( title=str_wrap(paste("Total Expected Recruits vs Actual Verified Recruitments vs. \nNumbers of Blood Collections till",currentDate, sep=" "),  60),
+#         x = "Recruitment Sites")+
+#   #annotation_custom(l, xmin = 7.5, xmax = 9.5, ymin = -150, ymax = -200) +
+#   #coord_cartesian(clip = "off") +
+#   theme( axis.title.x = element_text( size = 14, face = "bold"),
+#          axis.title.y = element_text(size = 14, face = "bold"),
+#          #axis.title.y.right = element_text(size=10,face="bold"),
+#          title = element_text(size=9,face="bold"),
+#          # Remove panel border
+#          panel.border = element_blank(),  
+#          # Remove panel grid lines
+#          panel.grid.major = element_blank(),
+#          panel.grid.minor = element_blank(),
+#          # Remove panel background
+#          panel.background = element_blank(),
+#          # Add axis line
+#          axis.line = element_line(colour = "grey"),
+#          # Remove the legend
+#          legend.title = element_text(size=12,face="bold"),
+#          legend.position =c(0.78, 0.9) 
+#          #plot.margin = unit(c(1, 1, 3, 1), "lines")
+#   )  
+#  
+
+set.seed(42)
+verified_expect_bld.plot <- ggplot(verifed_expected_n1[which(verifed_expected_n1$`Expected Verified`!="Expected"),], aes(x = Site,y=verified.n)) + 
+  geom_bar(aes(x=factor(Site),y =Expected_Verified_n,
+               fill=factor(`Expected Verified`,levels=c("Verified, no Activities","Survey Only","Blood Only","Survey + Blood"))),
+           color="black",position="stack",stat="identity")+
+  #geom_bar(aes(x=factor(Site),y=Expected_Verified_n,color=fct_rev(`Expected Verified`),fill=fct_rev(`Expected Verified`)),position="identity", stat="identity",alpha=0.2)+ 
+  geom_text_repel(aes(x=factor(Site),y=cum.count,label=cum.count,group=`Expected Verified`),size = 3.2, 
+                  direction = "both",min.segment.length = Inf,vjust=-0.3,hjust= 1.2, position = position_dodge(-0.3),
+                  box.padding = unit(0.01, "lines")
+                 )+
+  geom_jitter(data=filter(verifed_expected_n1, `Expected Verified`=="Expected"),aes(
+    color=`Expected Verified`),shape=9,fill="white",position = position_jitter(seed = 1)) + 
+  
+  geom_text(data=filter(verifed_expected_n1, `Expected Verified`=="Expected"),aes(y=Expected,label=Expected),size = 3.5,vjust = -0.70,  hjust=-0.1,position = position_jitter(seed = 1),color="red") +
+  scale_fill_manual(values = c("lightblue","azure","yellow","pink"), 
+                    name="" ,labels=(c("Verified, no Activities","Survey Only","Blood Only","Survey + Blood")))+
+  scale_color_manual("",label="Expected",values="red")+
+  scale_y_continuous(name="Individuals, N", breaks=c(100,500,1000,1500,2000,2500,3000) ) +
+  #guides(col = guide_legend(ncol = 1),colors=`Expected Verified`) +
+  
+  #geom_text(aes(y=label.count, label= Expected_Verified_n),color="black",vjust=1.0,size=3.0) + labs(x = "", y = "# Participants") + 
+  #stat_summary(fun.y = sum, aes(label = ..y.., group = Site), geom = "text",hjust = 1.5,vjust=-0.5,size=3.5) +
+  labs( title=str_wrap(paste("Total Number of Expected Under TO6 vs. Actual Connect Participants \nBy Site Through ",currentDate, sep=" "),  60),
         x = "Recruitment Sites")+
-  #annotation_custom(l, xmin = 7.5, xmax = 9.5, ymin = -150, ymax = -200) +
-  #coord_cartesian(clip = "off") +
-  theme( axis.title.x = element_text( size = 14, face = "bold"),
-         axis.title.y = element_text(size = 14, face = "bold"),
-         #axis.title.y.right = element_text(size=10,face="bold"),
-         title = element_text(size=9,face="bold"),
-         # Remove panel border
-         panel.border = element_blank(),  
-         # Remove panel grid lines
-         panel.grid.major = element_blank(),
-         panel.grid.minor = element_blank(),
-         # Remove panel background
-         panel.background = element_blank(),
-         # Add axis line
-         axis.line = element_line(colour = "grey"),
-         # Remove the legend
-         legend.title = element_text(size=12,face="bold"),
-         legend.position =c(0.78, 0.9) 
-         #plot.margin = unit(c(1, 1, 3, 1), "lines")
-  )  
- 
+  theme(panel.background = element_blank(),
+        legend.title = element_text(size=8),
+        legend.position = "bottom",
+        axis.line = element_line(linewidth = 0.2),
+        axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                                               plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
 
  #Figure of cumulative verified participants with cumulative complete participants overlaid and time of verification on the x-axis OVERALL and BY SITE
 veri_resp$eligible.time <- ymd_hms(veri_resp$d_130371375_d_266600170_d_787567527) 
@@ -2871,7 +3028,9 @@ table11 %>% kable_styling(latex_options = "scale_down")
 
 table12_biocol %>% kable_styling(latex_options = "scale_down") %>% landscape()
 
-table13_surveycomplt %>% footnote(general = "Completion=yes if all 4 sections of the initial survey are completed and samples donated (for research collections: urine, mouthwash, and any blood is collected; for clinical collections: urine and any blood collected).", general_title = "Note:", footnote_as_chunk = T,threeparttable = T,escape=T)
+# table13_surveycomplt %>% footnote(general = "Completion=yes if all 4 sections of the initial survey are completed and samples donated (for research collections: urine, mouthwash, and any blood is collected; for clinical collections: urine and any blood collected).", general_title = "Note:", footnote_as_chunk = T,threeparttable = T,escape=T)
+
+table13b_surveycomplt %>% footnote(general = "Completion=yes if all 4 sections of the initial survey are completed and blood is collected.", general_title = "Note:", footnote_as_chunk = T,threeparttable = T,escape=T)
 
 ```
 
@@ -3003,18 +3162,18 @@ knitr::kable(table40_actpass[,c(8,6,7)],caption = 'Table 40. Number of Active Ve
 
 signin_methods1 %>%  kable_styling(latex_options = "scale_down")%>%landscape()
 
-knitr::kable(Table42b_awaresreasons[,c(13,3:12),],caption = 'Table 42. How Recruits Heard About Study', row.names=FALSE, align=c("l", "c", "c","c", "c", "c", "c", "c", "c", "c","c","c"),format.args = list(big.mark=",")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:21))%>% landscape() %>% footnote(general=c("Recruits may select more than one option.","Percentage is of each item in awareness among recruits within each site"),general_title="Note:",footnote_as_chunk = T)
+knitr::kable(Table42b_awaresreasons[,c(13,3:12),],caption = 'Table 42. How Recruits Heard About Study', row.names=FALSE, align=c("l", "c", "c","c", "c", "c", "c", "c", "c", "c","c","c"),format.args = list(big.mark=",")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:20))%>% landscape() %>% footnote(general=c("Recruits may select more than one option.","Percentage is of each item in awareness among recruits within each site"),general_title="Note:",footnote_as_chunk = T)
  
 table43_Totalactivecamp %>% kable_styling(latex_options = "scale_down")%>% landscape()
 
 #colnames(campaign.combo)[2:17] <- sapply(strsplit(colnames(campaign.combo)[2:17],"_"),tail,1)
-knitr::kable(campaign.combo0,caption = 'Table 44. Success Rate by Campaign Type for Active Recruits',row.names=FALSE, booktabs = T, linesep = "", format.args = list(big.mark = ","), align = c("l", "c", "c","c", "c", "c", "c", "c", "c", "c", "c","c", "c", "c", "c", "c", "c","c"), col.names=c("Site","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Total Active Recruits")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:9)) %>% add_header_above(c(" " = 1, "Aging out of Study" = 2, "Demographic Group" = 2, "Geographic Group"=2, "Non-Screening Appointment" =2, "Random" = 2, "Screening Appointment" = 2, "Other" = 2,"None of These Apply" = 2, " "=1)) %>% landscape() %>% footnote(general='Frequency (%) of Total Active Recruits of each Campaign Type by Site',general_title = "Note:", footnote_as_chunk = T)
+knitr::kable(campaign.combo0[,c(1:9,14:17,12,13,10,11,18)],caption = 'Table 44. Success Rate by Campaign Type for Active Recruits',row.names=FALSE, booktabs = T, linesep = "", format.args = list(big.mark = ","), align = c("l", "c", "c","c", "c", "c", "c", "c", "c", "c", "c","c", "c", "c", "c", "c", "c","c"), col.names=c("Site","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Total Active Recruits")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:9)) %>% add_header_above(c(" " = 1, "Aging out of Study" = 2, "Demographic Group" = 2, "Geographic Group"=2, "Non-Screening Appointment" =2, "Random" = 2, "Screening Appointment" = 2, "Other" = 2,"None of These Apply" = 2, " "=1)) %>% landscape() %>% footnote(general='Frequency (%) of Total Active Recruits of each Campaign Type by Site',general_title = "Note:", footnote_as_chunk = T)
 
 knitr::kable(optout_pct[,c(1,2,3,4)],caption = 'Table 45. Total Number of Pre-Consent Opt-Outs by Site',col.names=c("Site","Total Opt-Outs", "Percent %", "Total Active Recruits"), format.args = list(big.mark = ","), row.names=FALSE, align=c("l","c","c","c")) %>% add_indent(c(1:9)) %>% footnote(general=c('Frequency (%) of Overall Active Recruits of Connect.','KP not yet sending Opt-Out data'),general_title = "Note:", footnote_as_chunk = T)
 
 Table46_precst_act1 
 
-knitr::kable(Table47_optreasons[,c(2:12),],caption = 'Table 47. Pre-Consent Opt-Out Reasons Among Those That Opted Out', row.names=FALSE, align=c("l", "c", "c","c", "c", "c", "c", "c", "c", "c","c","c"))%>%  kable_styling(latex_options = "scale_down") %>% add_indent(c(1:33)) %>% landscape() %>% footnote(general=c('UChicago and KP sites are not currently sending data on opt-outs.','Frequency (%) of Total Opt-Outs by Site'),general_title = "Note:", footnote_as_chunk = T)
+knitr::kable(Table47_optreasons[,c(2:12),],caption = 'Table 47. Pre-Consent Opt-Out Reasons Among Those That Opted Out', row.names=FALSE, align=c("l", "c", "c","c", "c", "c", "c", "c", "c", "c","c","c"))%>%  kable_styling(latex_options = "scale_down") %>% add_indent(c(2:nrow(Table47_optreasons)-1)) %>% landscape() %>% footnote(general=c('KP sites are not currently sending data on opt-outs.','Frequency (%) of Total Opt-Outs by Site'),general_title = "Note:", footnote_as_chunk = T)
 
 work_flow_a  %>% kable_styling(latex_options = "scale_down")
 
@@ -3085,16 +3244,19 @@ table61_sexall %>% kable_styling(latex_options = "scale_down")%>% footnote(gener
 ```
 
 ```{r,echo=FALSE,include=FALSE}
+
 ##to get the refusal and withdrawl data
 currentDate <- Sys.Date()
-outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/"
-# ##to create a data of the particpants with previous cancer history among those user profile complete monthly
-# box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-#          client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
-# box_setwd(dir_id= 191948877738)
-# box_write(object = ca_hist[,c("token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], file_name=paste("prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""), row.names = F,na="")
+box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
+         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
 
-write.csv(ca_hist[,c("token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], paste(outputpath,"prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""), row.names = F,na="")
+outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/"
+# ##to create a data of the particpants with previous cancer history among those user profile complete
+ca_hist$date <- currentDate
+write.csv(ca_hist[,c("date","token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","RcrtSI_TypeTime_v1r0","RcrtUP_SubmitTime_v1r0","Cancer Type","Cancer Comments","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], paste(outputpath,"prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""), row.names = F,na="")
+
+box_setwd(dir_id=191948877738)
+box_write(object = ca_hist[,c("date","token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","RcrtSI_TypeTime_v1r0","RcrtUP_SubmitTime_v1r0","Cancer Type","Cancer Comments","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], paste("prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""),row.names = F,na="")
 
 # # 
 
@@ -3106,7 +3268,7 @@ refwd_reasons <- c("d_919699172","d_141450621","d_576083042","d_431428747","d_12
 refwd.main1 <- c("d_297147359_d_297147359","d_719222792_d_719222792","d_603278289_d_603278289","d_175506524_d_175506524","d_299274441_d_299274441","d_524352591_d_524352591","d_726389747","d_153713899","d_715390138")
 refwd_date1 <- c("d_657475009","d_982105411","d_390198398","d_808663245","d_262357957","d_711256590","d_161366008","d_614264509","d_664453818","d_269050420","d_672401635","d_123868967","d_659990606","d_613641698","d_119449326","d_113579866")
 
-rewd <- data[,c("token","Connect_ID", "site", "verified","d_827220437","recrt_steps_v1r0","d_821247024","d_512820379","d_912301837", unique(c(refwd.main1,refwd_type1)),refwd_date1,refwd_reasons)] 
+rewd <- data[,c("token","Connect_ID", "site", "verified","d_827220437","recrt_steps_v1r0","d_821247024", refwd.main1,refwd_type1,refwd_date1,refwd_reasons)] 
 #
 #on Jan. 12, these variables are not shown in the prod.participants table: d_297147359_d_366295286,d_299274441_d_457532784,d_672401635,d_764403541,d_603278289_d_821930940,d_524352591_d_902332801,d_175506524_d_905787778,d_719222792_d_993855378,d_974100830,d_175506524_d_175506524,
 act_ls <- colnames(rewd)[grepl("685002411",colnames(rewd))]
@@ -3206,14 +3368,12 @@ for (i in 1:length(refwd_date1)){
 refwd.cases.notes <- tmp[,which(grepl("v1r0", colnames(tmp)) | colnames(tmp) %in% c("Connect_ID","token","site","verified","reasons","date.max","case.dates","recrt_steps_v1r0"))]
 
 currentDate <- Sys.Date()
-# box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-#          client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
-# box_setwd(dir_id = 141543243283) #/CONNECT_DCEG ONLY/Connect Reports_DCEG ONLY/Refusal and Withdrawal Reports_DCEG
-# # 
-#  box_write(object = refwd.cases.notes[,which(!grepl("Date",colnames(refwd.cases.notes)))], file_name =paste("RefusalWithdrawl_cases_",currentDate,".csv",sep=""),row.names = F,na="")
 
-write.csv(refwd.cases.notes[,which(!grepl("Date",colnames(refwd.cases.notes)))],paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_refusal_withdrawl_cases_",currentDate,".csv",sep=""),row.names = F,na="")
+box_setwd(dir_id = 141543243283) #/CONNECT_DCEG ONLY/Connect Reports_DCEG ONLY/Refusal and Withdrawal Reports_DCEG
 
+box_write(object = refwd.cases.notes[,which(!grepl("Date",colnames(refwd.cases.notes)))], file_name =paste("RefusalWithdrawl_cases_",currentDate,".csv",sep=""),row.names = F,na="")
+
+# write.csv(refwd.cases.notes[,which(!grepl("Date",colnames(refwd.cases.notes)))],paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_refusal_withdrawl_cases_",currentDate,".csv",sep=""),row.names = F,na="")
 #levels=c("HealthPartners", "Henry Ford Health System","Marshfield Clinic Health System", "Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado", "Kaiser Permanente   Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest")
 
 #folder <- c(141622949146,141623034772,141623623841,141622125003,141623855895,142482879711,142480938244,142481904303,142481813411)
@@ -3222,36 +3382,36 @@ for (i in 1:length(levels(refwd.cases.notes$site))) {
   # id=folder[i]
   # box_setwd(dir_id = id)
   # box_write(object =refwd.cases.notes[which(refwd.cases.notes$site == levels(refwd.cases.notes$site)[i]), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_",site,currentDate,".csv",sep=""),row.names = F,na="") #to save the box folders
-  site <- levels(refwd.cases.notes$site)[i]
+  
   write.csv(refwd.cases.notes[which(refwd.cases.notes$site == levels(refwd.cases.notes$site)[i]),which(!grepl("Date",colnames(refwd.cases.notes)))],paste(outputpath,"RefusalWithdrawl_cases_",site,currentDate,".csv",sep=""),row.names = F,na="")
 }
 
-# box_setwd(dir_id=141622949146)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "HealthPartners"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=141623034772)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Henry Ford Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Henry_Ford_ Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=141623623841)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Marshfield Clinic Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Marshfield_ Clinic_Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=141622125003)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Sanford Health"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Sanford_ Health_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=141623855895)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "University of Chicago Medicine"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_University_of_ Chicago_Medicine_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=,142482879711)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Colorado"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Colorado_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=,142480938244)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Georgia"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=142481904303)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Hawaii"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser _Permanente_Hawai_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
-# box_setwd(dir_id=142481813411)
-# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Northwest"), which(!grepl("Date",colnames(refwd.cases.notes)))], file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Northwest_", currentDate, ".csv",sep=""),row.names = F,na="")
+box_setwd(dir_id=141622949146)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "HealthPartners"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=141623034772)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Henry Ford Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Henry_Ford_ Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=141623623841)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Marshfield Clinic Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Marshfield_ Clinic_Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=141622125003)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Sanford Health"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Sanford_ Health_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=141623855895)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "University of Chicago Medicine"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_University_of_ Chicago_Medicine_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=,142482879711)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Colorado"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Colorado_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=,142480938244)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Georgia"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=142481904303)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Hawaii"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser _Permanente_Hawai_",currentDate,".csv",sep=""),row.names = F,na="")
+
+box_setwd(dir_id=142481813411)
+box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Northwest"), which(!grepl("Date",colnames(refwd.cases.notes)))], file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Northwest_", currentDate, ".csv",sep=""),row.names = F,na="")
 
 
 
@@ -3295,12 +3455,11 @@ biospe_outreach <- veri_surM_bios %>% filter(biospe.cmplt==0 & basesurv.cmplt==1
          NoSamples = case_when(d_878865966 == 104430631 & d_167958071 == 104430631 & d_684635302 == 104430631 ~ "Has given biospecimens",
                                d_878865966 != 104430631 | d_167958071 != 104430631 | d_684635302 != 104430631 ~ "Has not given any biospecimens") ) %>% select(Site,Connect_ID,AllModules,NoSamples)
 
-for (site in unique(veri_surM_bios$Site)) {
-  biospe_outreach <- veri_surM_bios %>% filter(NoSamples=="Has not given any biospecimens" & Site==site) %>% dplyr::select(Site,Connect_ID,AllModules,NoSamples)
-  
-  #write.csv(biospe_outreach,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Biospecimen_Outreach_", site, "_",currentDate,".csv",sep=""),row.names = F,na="")
-}
-
+# for (site in unique(veri_surM_bios$Site)) {
+#     biospe_outreach <- veri_surM_bios %>% filter(NoSamples=="Has not given any biospecimens" & Site==site) %>% dplyr::select(Site,Connect_ID,AllModules,NoSamples)
+#
+# write.csv(biospe_outreach,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/Biospecimen_Outreach_", site, "_",currentDate,".csv",sep=""),row.names = F,na="")
+# }
 # HP: https://nih.app.box.com/folder/181137100949
 # SH: https://nih.app.box.com/folder/181135654302
 # Marshfield: https://nih.app.box.com/folder/180317179457
@@ -3314,17 +3473,17 @@ for (site in unique(veri_surM_bios$Site)) {
 # box_setwd(dir_id=181137100949)
 # biospe_outreach_HP <- veri_surM_bios %>% filter(NoSamples=="Has not given any biospecimens" & Site=="HealthPartners") %>% dplyr::select(Site,Connect_ID,AllModules,NoSamples)
 # box_write(object = biospe_outreach_HP,file_name=paste("Biospecimen_Outreach_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
+#  
 # box_setwd(dir_id=180318540046)
 # biospe_outreach_HFHS <- veri_surM_bios %>% filter(NoSamples=="Has not given any biospecimens" & Site=="Henry Ford Health System") %>% dplyr::select(Site,Connect_ID,AllModules,NoSamples)
 # box_write(object = biospe_outreach_HFHS,file_name=paste("Biospecimen_Outreach__Henry_Ford_ Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
+#  
 # box_setwd(dir_id=180317179457)
 # box_write(object = veri_surM_bios[which(veri_surM_bios$NoSamples=="Has not given any biospecimens" & veri_surM_bios$Site == "Marshfield Clinic Health System"),c("Site","Connect_ID","AllModules","NoSamples")],file_name=paste("Biospecimen_Outreach_Marshfield_ Clinic_Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
+#  
 # box_setwd(dir_id=181135654302)
 # box_write(object = veri_surM_bios[which(veri_surM_bios$NoSamples=="Has not given any biospecimens" & veri_surM_bios$Site == "Sanford Health"), c("Site","Connect_ID","AllModules","NoSamples")], file_name=paste("Biospecimen_Outreach_Sanford_ Health_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
+#  
 # box_setwd(dir_id=141623373381)
 # box_write(object = veri_surM_bios[which(veri_surM_bios$NoSamples=="Has not given any biospecimens" & veri_surM_bios$Site == "University of Chicago Medicine"),c("Site","Connect_ID","AllModules","NoSamples")], file_name=paste("Biospecimen_Outreach__University_of_ Chicago_Medicine_",currentDate,".csv",sep=""), row.names = F,na="")
 # 
@@ -3333,13 +3492,13 @@ for (site in unique(veri_surM_bios$Site)) {
 # 
 # box_setwd(dir_id=,142480938244)
 # box_write(object = veri_surM_bios[which(veri_surM_bios$NoSamples=="Has not given any biospecimens" & veri_surM_bios$Site == "Kaiser Permanente Georgia"), c("Site","Connect_ID","AllModules","NoSamples")], file_name=paste("Biospecimen_Outreach_Kaiser Permanente Georgia_",currentDate,".csv",sep=""),row.names = F,na="")
-# 
+
 # box_setwd(dir_id=142481904303)
 # box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Hawaii"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("Biospecimen_Outreach_Kaiser _Permanente_Hawai_",currentDate,".csv",sep=""),row.names = F,na="")
 # 
 # box_setwd(dir_id=142481813411)
 # box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Northwest"), which(!grepl("Date",colnames(refwd.cases.notes)))], file_name=paste("Biospecimen_Outreach_Kaiser_ Permanente_Northwest_", currentDate, ".csv",sep=""),row.names = F,na="")
-#
+# 
 
 
 ```
@@ -3366,15 +3525,16 @@ incentive_nonchi <- incentive_nonchi %>% mutate(Eligible.for.Payment=case_when(d
                                                                                    d_130371375_d_266600170_d_222373868 ==104430631 ~"NO"),
                                                 Time.Payment.Eligible.for.Round = ymd_hms(d_130371375_d_266600170_d_787567527))
 
-# box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-#          client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
-# 
-# box_setwd(dir_id = 167284102961)
-# 
-# box_write(object = incentive[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_NORC",currentDate,".csv",sep=""))
-# 
-# box_write(object = incentive_nonchi[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_OTHERSITES_",currentDate,".csv",sep=""))
+box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
+         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
+
+box_setwd(dir_id = 167284102961)
+
+box_write(object = incentive[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_NORC",currentDate,".csv",sep=""))
+
 write.csv(incentive[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")],paste(outputpath,"Incentives_Weekly_Report_NORC",currentDate,".csv", sep=""),na="",row.names=F)
+
+box_write(object = incentive_nonchi[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_OTHERSITES_",currentDate,".csv",sep=""))
 
 write.csv(incentive_nonchi[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")],paste(outputpath,"Incentives_Weekly_Report_OTHERSITES_",currentDate,".csv", sep=""),na="",row.names=F)
 
@@ -3383,75 +3543,6 @@ write.csv(incentive_nonchi[,c("token","site","NORC.Payment.Eligibility","Eligibl
 
 ```{r,echo=FALSE,include=FALSE}
 ###here I have combined the weekly log tables in this Consolidated weekly report because they are working on the same recruitment data
-
-recr_resp <-recr_resp %>% mutate(Site = case_when(d_827220437 == '531629870' ~ "HealthPartners",
-                                                  d_827220437 == '548392715' ~ "Henry Ford Health System", 
-                                                  d_827220437 == '303349821' ~ "Marshfield Clinic Health System",
-                                                  d_827220437 == '657167265' ~ "Sanford Health", 
-                                                  d_827220437 == '809703864' ~ "University of Chicago Medicine",
-                                                  d_827220437 == '125001209' ~ "Kaiser Permanente Colorado",
-                                                  d_827220437 == '327912200' ~ "Kaiser Permanente Georgia",
-                                                  d_827220437 == '452412599' ~ "Kaiser Permanente Northwest",  
-                                                  d_827220437 == '300267574' ~ "Kaiser Permanente Hawaii"),
-                                 
-                                 Site = factor(Site, levels=c("HealthPartners", "Henry Ford Health System","Marshfield Clinic Health System",
-                                                              "Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado",
-                                                              "Kaiser Permanente Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest")))
-
-
-#since the report will be checking the previous week till the past Sunday on each coming Monday
-recruit.wk.active <- recr_resp[which(recr_resp$d_512820379==486306141 ),] %>% filter(.,as_date(recru_time) < currentDate) %>%
-  group_by(Week.Sunday,Week.Sunday.date) %>%
-  dplyr::summarize(active_recruits=n())
-
-verified.wk.active <- veri_resp[which(veri_resp$d_821247024 == 197316935 & veri_resp$d_512820379==486306141),] %>%
-  filter(.,as_date(recru_time) < currentDate) %>% 
-  group_by(Verified.Sunday,Verified.Sunday.date) %>%
-  dplyr::summarize(active_verifieds=n())
-
-verified.wk.total <- veri_resp[which(veri_resp$d_821247024 == 197316935),] %>% 
-  filter(.,as_date(recru_time) < currentDate)%>% 
-  group_by(Verified.Sunday,Verified.Sunday.date) %>%
-  dplyr::summarize(total_verifieds=n())
-
-
-verified.wk.all <- merge(verified.wk.active,verified.wk.total, by.x=c("Verified.Sunday","Verified.Sunday.date"), 
-                         by.y = c("Verified.Sunday","Verified.Sunday.date"), all.y=TRUE)
-#verified.wk.all$Verified.Sunday.date[is.na(verified.wk.all$Verified.Sunday.date)]<- recrstart.date + verified.wk.all$verified.week*7
-recrui_wk_verified <- merge(recruit.wk.active,verified.wk.all, by.x=c("Week.Sunday"),by.y=c("Verified.Sunday"),all.x=TRUE,all.y=TRUE)
-recrui_wk_verified$Week.Sunday.date <- as_date(ifelse(is.na(recrui_wk_verified$Week.Sunday.date),recrui_wk_verified$Verified.Sunday.date,recrui_wk_verified$Week.Sunday.date))
-recrui_wk_verified$Verified.Sunday.date <- as_date(ifelse(is.na(recrui_wk_verified$Verified.Sunday.date),recrui_wk_verified$Week.Sunday.date,recrui_wk_verified$Verified.Sunday.date))
-
-recrui_wk_verified[is.na(recrui_wk_verified)] <- 0
-
-recrui_wk_verified <- recrui_wk_verified %>% arrange(Week.Sunday,Week.Sunday.date)
-
-#recrui_wk_verified <- recrui_wk_verified %>% mutate(week.date=as_date(do.call(pmax, c(select(.,ends_with('max')),na.rm=TRUE))))
-
-# passive recruits are the passive verified
-recrui_wk_verified$passive_verifieds <- recrui_wk_verified$total_verifieds-recrui_wk_verified$active_verifieds #new passive recruitment
-recrui_wk_verified$active_recruits.cum <- cumsum(recrui_wk_verified$active_recruits)
-recrui_wk_verified$passive_verifieds.cum <- cumsum(recrui_wk_verified$passive_verifieds)
-recrui_wk_verified$active_verifieds.cum <- cumsum(recrui_wk_verified$active_verifieds)
-
-recrui_wk_verified$total_recruits <- recrui_wk_verified$active_recruits + recrui_wk_verified$passive_verifieds ##the total recruits till that week
-
-recrui_wk_verified$total_recruits.cum <- cumsum(recrui_wk_verified$active_recruits + recrui_wk_verified$passive_verifieds) ##the total recruits till that week
-
-recrui_wk_verified$total_verified.cum <- cumsum(recrui_wk_verified$total_verifieds)
-
-#new response rate:
-recrui_wk_verified$new.active.response.rate <- ifelse(recrui_wk_verified$active_recruits >0, 100*(recrui_wk_verified$active_verifieds/recrui_wk_verified$active_recruits), 0)
-recrui_wk_verified$new.passive.response.rate <- ifelse(recrui_wk_verified$active_recruits!=0, 100*(recrui_wk_verified$passive_verifieds/recrui_wk_verified$active_recruits),NA)
-recrui_wk_verified$new.total.response.rate <- ifelse(recrui_wk_verified$active_recruits>0, 100*(recrui_wk_verified$total_verifieds/recrui_wk_verified$active_recruits), 0)
-
-#cumalative rate
-recrui_wk_verified$cum.active.response.rate <- 100*(cumsum(recrui_wk_verified$active_verifieds)/cumsum(recrui_wk_verified$active_recruits))
-recrui_wk_verified$cum.passive.response.rate <- 100*(cumsum(recrui_wk_verified$passive_verifieds)/cumsum(recrui_wk_verified$active_recruits))
-recrui_wk_verified$cum.total.response.rate <- 100*(cumsum(recrui_wk_verified$total_verifieds)/cumsum(recrui_wk_verified$active_recruits))
-
-
-##the activities in the verified participants
 modules <- c("d_100767870","d_949302066","d_536735468","d_663265240","d_976570371","d_517311251","d_832139544","d_264644252","d_770257102")
 ##for biospecimen 
 # recrver1$BioFin_BaseMWCol_v1r0  <-factor(recrver1$d_684635302,exclude=NULL)
@@ -3471,6 +3562,13 @@ modules <- c("d_100767870","d_949302066","d_536735468","d_663265240","d_97657037
 #d_173836415_d_266600170_d_139245758                                 Date/time Clinical Urine Collected
 # d_173836415_d_266600170_d_982213346                                 Date/time Clinical Blood Collected
 #on the clinical biospecimen collection that not every participants had their blood or urine collection time as d_173836415_d_266600170_d_982213346 Date/time Clinical Blood Collected (BioClin_ClinBloodTime_v1r0), but all of participants with clinical blood collections should have their blood receiving time as d_173836415_d_266600170_d_398645039 (BioClin_DBBloodRRLDt_v1r0), same as the clinical urine collections, confirmed with Michelle "that sounds right. The clinical collection times BioClin_ClinBloodTime_v1r0 and BioClin_ClinUrineTime_v1r0 will come a few days later." Therefore, when the collection times of clinical collection are not prompt updated (available), the receiving time can be altenative for those clinical collection without collection times.
+##July. 10, 2023, as Michelle and Amelia asked to update the completion concept as the completions of both 
+###baseline surveys and blood collection as yes, I now update the weekly log tables on July. 22
+###request via Github https://github.com/Analyticsphere/metricsReportsRequests/issues/39:
+# #(3) Cumulative Completed All Participant Study Activities
+# #(4) Completed All Participant Study Activity Response Ratio among Invited = Completed All Activities/ Invited
+# #(5) Completed All Participant Study Activity Response Ratio among Verified = Completed All Activities/ Verified
+# #(6) Completed all Participant Study Activities per week
 
 bio.col <- c("d_684635302","d_878865966", "d_167958071", "d_173836415_d_266600170_d_915179629", "d_173836415_d_266600170_d_718172863", "d_173836415_d_266600170_d_592099155", "d_173836415_d_266600170_d_561681068", "d_173836415_d_266600170_d_847159717", "d_173836415_d_266600170_d_448660695", "d_173836415_d_266600170_d_139245758", "d_173836415_d_266600170_d_541311218", "d_173836415_d_266600170_d_224596428", "d_173836415_d_266600170_d_740582332", "d_173836415_d_266600170_d_982213346", "d_173836415_d_266600170_d_398645039", "d_173836415_d_266600170_d_822274939")
 
@@ -3498,7 +3596,17 @@ clc.urinetm <- c("d_173836415_d_266600170_d_139245758","d_173836415_d_266600170_
 # 5 906417725 Refusing all future activities                                HdWd_Activepart_v1r0  
 ref.wd <- c("d_773707518","d_747006172","d_831041022","d_664453818","d_269050420","d_659990606")
 
-#based on the working above
+var.list <- c("token","Connect_ID","d_821247024","d_914594314","d_512820379","state_d_158291096","d_471593703","d_827220437",
+              "d_130371375_d_266600170_d_787567527","d_130371375_d_266600170_d_731498909",bio.col,modules,ref.wd)
+requery <- paste(var.list,collapse=",")
+
+veri_resp <- data[which(data$d_512820379 != 486306141 | data$d_821247024 != 922622075 ),var.list] %>%
+  mutate(recru_time = ymd_hms(d_471593703),
+         verified_time = ymd_hms(d_914594314),
+         elgible.time = ymd_hms(d_130371375_d_266600170_d_787567527))
+veri_resp$recrstart.date <-  as_date(min(ymd_hms(veri_resp$d_471593703),na.rm=TRUE))
+
+
 veri_resp <- apply_labels(veri_resp,d_827220437 = "Site",#RcrtES_Site_v1r0
                           d_827220437 = c("HealthPartners"= 531629870, "Henry Ford Health System"=548392715, 
                                           "Kaiser Permanente Colorado" = 125001209, "Kaiser Permanente Georgia" = 327912200,
@@ -3512,11 +3620,87 @@ veri_resp$site <- factor(veri_resp$d_827220437,
                                   "Kaiser Permanente Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest",
                                   "National Cancer Institute","Other"))
 veri_resp$site <- droplevels(veri_resp$site)
+# veri_resp$recru_time <- ymd_hms(veri_resp$d_471593703)
+# veri_resp$verified_time <- ymd_hms(veri_resp$d_914594314)
+# veri_resp$recrstart.date <- as_date(min(ymd_hms(veri_resp$d_471593703),na.rm=TRUE))
+recrstart.date <- as_date(min(ymd_hms(veri_resp$recru_time),na.rm=TRUE))
+wday(unique(veri_resp$recrstart.date), week_start = 1)
+#[1] 5
+as_date(recrstart.date-days(5))
+#[1] "2021-07-18" #Sunday the censoring starting day
+wday(as_date(recrstart.date-days(5)),week_start=1)
+#[1] 1 #Sunday
+veri_resp$recruit.week <- ceiling(as.numeric(difftime(as_date(veri_resp$recru_time), as_date(veri_resp$recrstart.date-days(5)),units="days"))/7) #to lock at Monday as the start of week
+veri_resp$recruit.week.date <- veri_resp$recrstart.date + days(2) + dweeks(veri_resp$recruit.week-1) #to present the date of the starting date in the following week
+summary(as_date(veri_resp$recruit.week.date))
+# Min.      1st Qu.       Median         Mean      3rd Qu.         Max. 
+# "2021-07-25" "2022-08-14" "2022-11-06" "2022-10-25" "2023-01-15" "2023-03-26" 
+veri_resp$verified.week <- ceiling(as.numeric(difftime(as_date(ymd_hms(veri_resp$d_914594314)),as_date(veri_resp$recrstart.date-days(5)),units="days"))/7)
+veri_resp$verified.week.date <- (veri_resp$recrstart.date) + days(2)+ dweeks(veri_resp$verified.week-1)
 
+min(as_date(ymd_hms(veri_resp$verified_time)),na.rm=TRUE)
+# [1] "2021-07-27"
+unique(as_date(min(veri_resp$verified.week.date,na.rm=TRUE)))
+#[1] "2021-08-01"
+unique(as_date(max(veri_resp$verified.week.date,na.rm=TRUE)))
+#[1] "2023-03-26"
+wday(as_date(recrstart.date-days(5)),week_start=1)
+#7 Sunday
+###to create the time censoring variables by week;
+veri_resp <- veri_resp[which(veri_resp$recruit.week.date < currentDate),] #as Michelle and Amelia want to set up the censor week as Monday to Sunday (the Sunday would be the last day of the week, and the report is done every Monday), the data on the week of the checking day would be excluded from the analytical dataset 
+#verified  over time:
+
+recruit.wk.active <- veri_resp[which(veri_resp$d_512820379==486306141),] %>% 
+  group_by(recruit.week,recruit.week.date) %>%
+  dplyr::summarize(active_recruits=n(),
+                   recruitdate_max=max(recru_time,rm.na=T))
+
+verified.wk.active <- veri_resp[which(veri_resp$d_821247024 == 197316935 & veri_resp$d_512820379==486306141 & veri_resp$verified.week.date < currentDate),] %>% 
+  group_by(verified.week,verified.week.date) %>%
+  dplyr::summarize(active_verifieds=n(),
+                   verified_activetime.max=max(verified_time,rm.na=T))
+
+verified.wk.total <- veri_resp[which(veri_resp$d_821247024 == 197316935 & veri_resp$verified.week.date < currentDate),] %>% 
+  group_by(verified.week,verified.week.date) %>%
+  dplyr::summarize(total_verifieds=n(),
+                   verified_time.max=max(verified_time,rm.na=T))
+
+verified.wk.all <- merge(verified.wk.active,verified.wk.total, by.x = c("verified.week","verified.week.date"),by.y=c("verified.week","verified.week.date"),all.y=TRUE,all.x=TRUE)
+verified.wk.all$verified.week.date[is.na(verified.wk.all$verified.week.date)]<- recrstart.date + days(3)+ dweeks(verified.wk.all$verified.week-1)
+recrui_wk_verified <- merge(recruit.wk.active,verified.wk.all, by.x=c("recruit.week","recruit.week.date"),by.y=c("verified.week","verified.week.date"),all.x=TRUE,all.y=TRUE)
+recrui_wk_verified <- recrui_wk_verified %>% 
+  mutate_at(c("active_recruits","active_verifieds","total_verifieds"),~replace_na(., 0))
+
+#recrui_wk_verified <- recrui_wk_verified %>% mutate(week.date=as_date(do.call(pmax, c(select(.,ends_with('max')),na.rm=TRUE))))
+
+recrui_wk_verified <- recrui_wk_verified %>% arrange(recruit.week,recruit.week.date)
+
+# passive recruits are the passive verified
+recrui_wk_verified$passive_verifieds <- recrui_wk_verified$total_verifieds-recrui_wk_verified$active_verifieds #new passive recruitment
+recrui_wk_verified$active_recruits.cum <- cumsum(recrui_wk_verified$active_recruits)
+recrui_wk_verified$passive_verifieds.cum <- cumsum(recrui_wk_verified$passive_verifieds)
+recrui_wk_verified$active_verifieds.cum <- cumsum(recrui_wk_verified$active_verifieds)
+
+recrui_wk_verified$total_recruits <- recrui_wk_verified$active_recruits + recrui_wk_verified$passive_verifieds ##the total recruits till that week
+
+recrui_wk_verified$total_recruits.cum <- cumsum(recrui_wk_verified$active_recruits + recrui_wk_verified$passive_verifieds) ##the total recruits till that week
+
+recrui_wk_verified$total_verified.cum <- cumsum(recrui_wk_verified$total_verifieds)
+
+#new response rate:
+recrui_wk_verified$new.active.response.rate <- ifelse(recrui_wk_verified$active_recruits >0, 100*(recrui_wk_verified$active_verifieds/recrui_wk_verified$active_recruits), 0)
+recrui_wk_verified$new.passive.response.rate <- ifelse(recrui_wk_verified$active_recruits!=0, 100*(recrui_wk_verified$passive_verifieds/recrui_wk_verified$active_recruits),NA)
+recrui_wk_verified$new.total.response.rate <- ifelse(recrui_wk_verified$active_recruits>0, 100*(recrui_wk_verified$total_verifieds/recrui_wk_verified$active_recruits), 0)
+
+#cumalative rate
+recrui_wk_verified$cum.active.response.rate <- 100*(cumsum(recrui_wk_verified$active_verifieds)/cumsum(recrui_wk_verified$active_recruits))
+recrui_wk_verified$cum.passive.response.rate <- 100*(cumsum(recrui_wk_verified$passive_verifieds)/cumsum(recrui_wk_verified$active_recruits))
+recrui_wk_verified$cum.total.response.rate <- 100*(cumsum(recrui_wk_verified$total_verifieds)/cumsum(recrui_wk_verified$active_recruits))
 
 ###for the verified group on their biospecimen collections, module completions, eligibility and refusal and withdrawal
-veri_resp$eligible.time <- ymd_hms(veri_resp$d_130371375_d_266600170_d_787567527) 
-# veri_resp$eligible.week <- ifelse(!is.na( veri_resp$d_130371375_d_266600170_d_787567527) & veri_resp$d_821247024==197316935,ceiling(as.numeric(difftime(as_date(veri_resp$elgible.time),as_date(recrstart.date-days(5)),units="days"))/7),NA)
+veri_resp$elgible.time <- ymd_hms(veri_resp$d_130371375_d_266600170_d_787567527) 
+veri_resp$eligible.week <- ifelse(!is.na( veri_resp$d_130371375_d_266600170_d_787567527) & veri_resp$d_821247024==197316935,
+                                  ceiling(as.numeric(difftime(as_date(veri_resp$elgible.time),as_date(recrstart.date-days(5)),units="days"))/7),NA)
 
 # 4 264644252 Date/time of Completion of Where You Live and Work                                      SrvLAW_TmComplete_v1r0
 # 5 315032037 Date/Time SSN Survey completed                                                          SrvSS_TmComplete_v1r0 
@@ -3536,33 +3720,8 @@ veri_resp$eligible.time <- ymd_hms(veri_resp$d_130371375_d_266600170_d_787567527
 #and for the completion of all activities= complete of 4 modules and completion of all biospecimen by their settings: 
 # research and clinic, but the incentive won't be included here
 # the cumulative passive recruits are passive verified participants
-recrstart.date <- as_date(min(ymd_hms(veri_resp$recru_time),na.rm=TRUE))
-wday(unique(veri_resp$recrstart.date), week_start = 1)
-#[1] 5
-as_date(recrstart.date-days(5))
-#[1] "2021-07-18" #Sunday the censoring starting day
-wday(as_date(recrstart.date-days(5)),week_start=1)
-#[1] 1 #Sunday
-# veri_resp$recruit.week <- ceiling(as.numeric(difftime(as_date(veri_resp$recru_time), as_date(veri_resp$recrstart.date-days(5)),units="days"))/7) #to lock at Monday as the start of week
-# veri_resp$recruit.week.date <- veri_resp$recrstart.date + days(2) + dweeks(veri_resp$recruit.week-1) #to present the date of the starting date in the following week
-# summary(as_date(veri_resp$recruit.week.date))
-# # Min.      1st Qu.       Median         Mean      3rd Qu.         Max. 
-# # "2021-07-25" "2022-08-14" "2022-11-06" "2022-10-25" "2023-01-15" "2023-03-26" 
-# veri_resp$verified.week <- ceiling(as.numeric(difftime(as_date(ymd_hms(veri_resp$d_914594314)),as_date(veri_resp$recrstart.date-days(5)),units="days"))/7)
-# veri_resp$verified.week.date <- (veri_resp$recrstart.date) + days(2)+ dweeks(veri_resp$verified.week-1)
 
-min(as_date(ymd_hms(veri_resp$verified_time)),na.rm=TRUE)
-# [1] "2021-07-27"
-unique(as_date(min(veri_resp$verified.week.date,na.rm=TRUE)))
-#[1] "2021-08-01"
-unique(as_date(max(veri_resp$verified.week.date,na.rm=TRUE)))
-#[1] "2023-03-26"
-wday(as_date(recrstart.date-days(5)),week_start=1)
-#7 Sunday
-###to create the time censoring variables by week;
-#as Michelle and Amelia want to set up the censor week as Monday to Sunday (the Sunday would be the last day of the week, and the report is done every Monday), the data on the week of the checking day would be excluded from the analytical dataset 
-
-veri_act <- filter(veri_resp,d_821247024==197316935 & as_date(verified_time) < currentDate) %>% 
+veri_act <- filter(veri_resp,d_821247024==197316935) %>% 
   mutate(law.time = ymd_hms(d_264644252),
          sas.time = ymd_hms(d_770257102),
          mre.time = ymd_hms(d_832139544),
@@ -3591,24 +3750,32 @@ veri_act <- veri_act%>%
          bioany.time = pmin(as.POSIXct(bldcol.time),as.POSIXct(urine.time),as.POSIXct(mw.time), na.rm = TRUE), #the earliest time of any collection
          biocol.time = pmax(as.POSIXct(bldcol.time),as.POSIXct(urine.time),as.POSIXct(mw.time), na.rm = TRUE)) ##the most recent time of any collection
 
-
 veri_act <- veri_act%>% mutate(
   module.week = ifelse(!is.na(module.time),ceiling(as.numeric(difftime(as_date(module.time)+days(5),as_date(recrstart.date),units="days"))/7),NA),
   anybio.week = ifelse(!is.na(bioany.time),ceiling(as.numeric(difftime(as_date(bioany.time+days(5)),as_date(recrstart.date), units="days"))/7),NA),
   biocol.week = ifelse(!is.na(biocol.time),ceiling(as.numeric(difftime(as_date(biocol.time+days(5)),as_date(recrstart.date), units="days"))/7),NA),
+  bldcol.week = ifelse(!is.na(bldcol.time),ceiling(as.numeric(difftime(as_date(bldcol.time+days(5)),as_date(recrstart.date), units="days"))/7),NA),
   revoke.week = ifelse(!is.na(d_664453818),ceiling(as.numeric(difftime(as_date(ymd_hms(d_664453818)+days(5)),as_date(recrstart.date), units="days"))/7),NA),
   dtdestroy.week = ifelse(!is.na(d_269050420),ceiling(as.numeric(difftime(as_date(ymd_hms(d_269050420)+days(5)),as_date(recrstart.date), units="days"))/7),NA),
   wdconsent.week = ifelse(!is.na(d_659990606),ceiling(as.numeric(difftime(as_date(ymd_hms(d_659990606)+days(5)),as_date(recrstart.date), units="days"))/7),NA))
 
-veri_act <- veri_act%>% mutate(allacts = case_when(d_100767870 == 353358909 & biospeComplete==1 ~ 353358909,
-                                                   d_100767870 == 104430631  | biospeComplete %in% c(0,NA) ~ 104430631 ))
-veri_act$allacts.time <- apply(veri_act[,c("module.time","biocol.time")],1,max)
-veri_act$allacts.week <- ceiling(as.numeric(difftime(as_date(ymd_hms(veri_act$allacts.time)+days(5)),as_date(recrstart.date), units="days"))/7)
+##to recreate the new variable of th competions based on the updated concept of completions as the completions 
+###of all four baseline modules and blood collections as Yes.
+veri_act <- veri_act%>% mutate(allacts0 = case_when(d_100767870 == 353358909 & biospeComplete==1 ~ 353358909,
+                                                    d_100767870 == 104430631  | biospeComplete %in% c(0,NA) ~ 104430631 ),
+                               allacts1 = case_when(d_100767870 == 353358909 & d_878865966 == 353358909 ~ 353358909,
+                                                    d_100767870 == 104430631  | d_878865966 %in% c(0,NA) ~ 104430631 ))
+# veri_act$allacts.time <- apply(veri_act[,c("module.time","biocol.time")],1,max)
+# veri_act$allacts.week <- ceiling(as.numeric(difftime(as_date(ymd_hms(veri_act$allacts.time)+days(5)),as_date(recrstart.date), units="days"))/7)
 
-eligible.wk.total <- veri_act[which(veri_act$d_130371375_d_266600170_d_731498909 ==353358909 ),] %>%
-  group_by(eligible.Sunday) %>%
+veri_act$allacts.time1 <- apply(veri_act[,c("module.time","bldcol.time")],1,max)
+veri_act$allacts.week1 <- ceiling(as.numeric(difftime(as_date(as.POSIXct(veri_act$allacts.time1)+days(5)),as_date(recrstart.date), units="days"))/7)
+
+
+eligible.wk.total <- veri_resp[which(veri_resp$d_821247024 == 197316935 & veri_resp$d_130371375_d_266600170_d_731498909 ==353358909 ),] %>% 
+  group_by(eligible.week) %>%
   dplyr::summarize(total_eligible=n(),
-                   eligible.time.max=max(eligible.time,rm.na=T))
+                   eligible.time.max=max(elgible.time,rm.na=T))
 
 module.wk.total <- filter(veri_act,d_100767870==353358909) %>% arrange(module.week,verified.week) %>% 
   group_by(module.week)%>%
@@ -3628,10 +3795,15 @@ biocol.wk.total <- filter(veri_act, (biospeDonation =="Completed All 3 Sample Do
   dplyr::summarize(total_biocol=n(),
                    biocol.time.max=max(biocol.time,rm.na=T))
 
-allacts.wk.total <- filter(veri_act,allacts==353358909) %>% arrange(allacts.week,verified.week) %>% 
-  group_by(allacts.week)%>%
+# allacts.wk.total <- filter(veri_act,allacts==353358909) %>% arrange(allacts.week,verified.week) %>% 
+#   group_by(allacts.week)%>%
+#   dplyr::summarize(total_allacts=n(),
+#                    allacts.time.max=max(allacts.time,rm.na=T))
+
+allacts.wk.total <- filter(veri_act,allacts1==353358909) %>% arrange(allacts.week1,verified.week) %>% 
+  group_by(allacts.week1)%>%
   dplyr::summarize(total_allacts=n(),
-                   allacts.time.max=max(allacts.time,rm.na=T))
+                   allacts.time.max=max(allacts.time1,rm.na=T))
 
 #revoke.wk.total <- veri_act[which(veri_act$HIPAARevVer  ==353358909 ),] %>% 
 #  group_by(revoke.week) %>%
@@ -3645,23 +3817,23 @@ wdconsent.wk.total <- filter(veri_act,WdConsentVer ==353358909 & !is.na(wdconsen
   group_by(wdconsent.week)%>%
   dplyr::summarize(total_wdconsent=n())
 
-veri_wk_eligble <- merge(verified.wk.total, eligible.wk.total,by.x="Verified.Sunday",by="eligible.Sunday", all.x=TRUE,all.y=TRUE)
-veri_wk_eligble <- merge(veri_wk_eligble, module.wk.total,by.x="Verified.Sunday",by="module.week", all.x=TRUE,all.y=TRUE)
-veri_wk_eligble <- merge(veri_wk_eligble, anybio.wk.total,by.x="Verified.Sunday",by="anybio.week", all.x=TRUE,all.y=TRUE)
-veri_wk_eligble <- merge(veri_wk_eligble, biocol.wk.total,by.x="Verified.Sunday",by="biocol.week", all.x=TRUE,all.y=TRUE)
-veri_wk_eligble <- merge(veri_wk_eligble, dtdestroy.wk.total,by.x="Verified.Sunday",by="dtdestroy.week", all.x=TRUE,all.y=TRUE)
-veri_wk_eligble <- merge(veri_wk_eligble, wdconsent.wk.total,by.x="Verified.Sunday",by="wdconsent.week", all.x=TRUE,all.y=TRUE)
-veri_wk_eligble <- merge(veri_wk_eligble, allacts.wk.total,by.x="Verified.Sunday",by="allacts.week", all.x=TRUE,all.y=TRUE)
-veri_wk_eligble1 <- filter(veri_wk_eligble,Verified.Sunday.date>0) %>% 
-  mutate(Verified.Sunday.date=as_date(ifelse(is.na(Verified.Sunday.date),as_date(recrstart.date)+dweeks(Verified.Sunday-1)+days(5),Verified.Sunday.date)))
+veri_wk_eligble <- merge(verified.wk.total, eligible.wk.total,by.x="verified.week",by="eligible.week", all.x=TRUE,all.y=TRUE)
+veri_wk_eligble <- merge(veri_wk_eligble, module.wk.total,by.x="verified.week",by="module.week", all.x=TRUE,all.y=TRUE)
+veri_wk_eligble <- merge(veri_wk_eligble, anybio.wk.total,by.x="verified.week",by="anybio.week", all.x=TRUE,all.y=TRUE)
+veri_wk_eligble <- merge(veri_wk_eligble, biocol.wk.total,by.x="verified.week",by="biocol.week", all.x=TRUE,all.y=TRUE)
+veri_wk_eligble <- merge(veri_wk_eligble, dtdestroy.wk.total,by.x="verified.week",by="dtdestroy.week", all.x=TRUE,all.y=TRUE)
+veri_wk_eligble <- merge(veri_wk_eligble, wdconsent.wk.total,by.x="verified.week",by="wdconsent.week", all.x=TRUE,all.y=TRUE)
+veri_wk_eligble <- merge(veri_wk_eligble, allacts.wk.total,by.x="verified.week",by="allacts.week1", all.x=TRUE,all.y=TRUE)
+veri_wk_eligble1 <- filter(veri_wk_eligble,verified.week.date>0) %>% 
+  mutate(verified.week.date=as_date(ifelse(is.na(verified.week.date),as_date(recrstart.date)+dweeks(verified.week-1)+days(5),verified.week.date)))
 
 
 ###mutate_at(vars(match())) cannot work on here with an error messages
-vars <- c("total_verifieds","total_module","total_anybio","total_eligible","total_biocol","total_dtdestroy","total_wdconsent","total_allacts")
-recr_veri_wk <-  merge(recrui_wk_verified,veri_wk_eligble1, by.x=c("total_verifieds","Week.Sunday","Week.Sunday.date"),by.y=c("total_verifieds","Verified.Sunday","Verified.Sunday.date"),all.x=TRUE,all.y=TRUE)
-#recr_veri_wk <- recr_veri_wk %>% dplyr::select(.,-c("total_verifieds.y")) 
+vars <- c("total_verifieds.x","total_module","total_anybio","total_eligible","total_biocol","total_dtdestroy","total_wdconsent","total_allacts")
+recr_veri_wk <-  merge(recrui_wk_verified,veri_wk_eligble1, by.x="recruit.week",by.y="verified.week",all.x=TRUE,all.y=TRUE)
+recr_veri_wk <- recr_veri_wk %>% dplyr::select(.,-c("total_verifieds.y","verified_time.max.y"))
 
-recr_veri_wk <- recr_veri_wk %>% mutate_at(vars(c("total_eligible","total_module","total_anybio","total_biocol","total_dtdestroy","total_wdconsent","total_allacts")),~replace_na(., 0)) %>%  arrange(Week.Sunday) %>% 
+recr_veri_wk <- recr_veri_wk %>% mutate_at(vars,~replace_na(., 0)) %>%  arrange(recruit.week)%>% 
   mutate(total_eligible.cum=cumsum(total_eligible),
          total_module.cum=cumsum(total_module),
          total_anybio.cum=cumsum(total_anybio),
@@ -3688,22 +3860,35 @@ for (i in 1:length(var.list)){
   colnames(recr_veri_wk)[which(colnames(recr_veri_wk)=="ratio2")] <- paste(var.list[i],"Verifieds","ratio",sep="_")
 }
 
-recr_veri_wk$Week.Starting <- recr_veri_wk$Week.Sunday.date-days(6)
-recr_veri_wk$Week.Ending <- recr_veri_wk$Week.Sunday.date
+recr_veri_wk$Week.Starting <- recr_veri_wk$recruit.week.date-days(6)
+recr_veri_wk$Week.Ending <- recr_veri_wk$recruit.week.date
 recr_veri_wk$week.day <- wday(recr_veri_wk$Week.Starting,label=TRUE,abbr=F)
-recr_veri_wk <- recr_veri_wk %>% mutate(total_analysis=cumsum(total_verifieds)-cumsum(total_dtdestroy),
-                                        total_followup=cumsum(total_verifieds)-cumsum(total_wdconsent))
-#write.csv(recr_veri_wk,"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_Allratio_recruits_cumulative_0306.csv",row.names = F,na="")
+recr_veri_wk <- recr_veri_wk %>% mutate(total_analysis=cumsum(total_verifieds.x)-cumsum(total_dtdestroy),
+                                        total_followup=cumsum(total_verifieds.x)-cumsum(total_wdconsent))
+# write.csv(recr_veri_wk,"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_Allratio_recruits_cumulative_0306.csv",row.names = F,na="")
 #"recruit.week", "week.day", "recruit.week.date","passive_verifieds",
 var.select <- c(  "active_recruits.cum", "passive_verifieds.cum", "total_verified.cum", "cum.total.response.rate", 
-                  "active_recruits", "total_verifieds", "total_anybio.cum","anybio_Invites_ratio","anybio_Verifieds_ratio",
+                  "active_recruits", "total_verifieds.x", "total_anybio.cum","anybio_Invites_ratio","anybio_Verifieds_ratio",
                   "total_anybio","total_module.cum", "module_Invites_ratio", "module_Verifieds_ratio", "total_module", "total_eligible.cum", "eligible_Invites_ratio",
                   "eligible_Verifieds_ratio", "total_eligible", "total_allacts.cum", "allacts_Invites_ratio", "allacts_Verifieds_ratio", "total_allacts", 
                   "total_wdconsent.cum", "wdconsent_Verifieds_ratio", "total_wdconsent", "total_dtdestroy.cum", "dtdestroy_Verifieds_ratio", "total_dtdestroy", 
                   "total_analysis", "total_followup")        
 
 #"total_biocol.cum", "biocol_Invites_ratio", "biocol_Verifieds_ratio", "total_biocol",  this part is about the completed biospecimen collection counts
-
+##to update the completes in the labels requested from Amelia:
+# (3) Cumulative Completed BL Survey+Blood
+# (4) Completed BL Survey+Blood Response Ratio among Invited = Completed BL Survey+Blood/ Invited
+# (5) Completed BL Survey+Blood Response Ratio among Verified = Completed BL Survey+Blood/ Verified
+# (6) Completed BL Survey+Blood per week
+# 
+#  
+# 
+# Also I still see the old columns labeled below but the counts don't look right. In the 7/10 report for KPNW the 'Cumulative Completed All Participant Study Activities' for the week of 7/3/23-7/9/23 was n=813. In the 7/24 report the same week is showing n=81. I don't think that count is right. The new calculation for completes is less restrictive, so if anything the count should be higher than 813. Where completes=initial survey+ blood (with urine and mouthwash not taken into account at all)
+# 
+# (3) Cumulative Completed All Participant Study Activities
+# (4) Completed All Participant Study Activity Response Ratio among Invited = Completed All Activities/ Invited
+# (5) Completed All Participant Study Activity Response Ratio among Verified = Completed All Activities/ Verified
+# (6) Completed all Participant Study Activities per week
 labels <- c("Cumulative Invitations", "Cumulative Passive Verified Participants", "Cumulative Verified Participants", 
             "Response Ratio = Verfication/ Invitations", "Invitations per week", "Verifications per week", 
             "Cumulative Specimens defined as any baseline blood or urine or mouthwash collected", 
@@ -3712,13 +3897,13 @@ labels <- c("Cumulative Invitations", "Cumulative Passive Verified Participants"
             "Survey Response Ratio among Verified = All Baseline Surveys/ Verified", "Survey Completion per week", 
             "Cumulative Incentive Eligible", "Incentive Eligible Response Ratio among Invited = Incentive Eligible/ Invited", 
             "Incentive Eligible Response Ratio among Verified = Incentive Eligible/ Verified", "Incentive Eligible  per week ", 
-            "Cumulative Completed All Participant Study Activities", "Completed All Participant Study Activity Response Ratio among Invited = Completed All Activities/ Invited", 
-            "Completed All Participant Study Activity Response Ratio among Verified = Completed All Activities/ Verified", 
-            "Completed all Participant Study Activities per week",
+            "Cumulative Completed BL Survey+Blood", "Completed BL Survey+Blood Response Ratio among Invited = Completed BL Survey+Blood/ Invited", 
+            "Completed BL Survey+Blood Response Ratio among Verified = Completed BL Survey+Blood/ Verified", 
+            "Completed BL Survey+Blood per week",
             "Cumulative Withdrawals", "Withdrawal/ Verfied", "Withdrawals per week ", "Cumulative Data Destruction", "Data Destruction/ Verified", 
             "Data Destruction per week", "Available for Analysis (Verified - Data Destruction)", "Available for Follow-up (Verified - Withdrawals)")
 
-base <- recr_veri_wk[,c("Week.Sunday", "Week.Starting", "Week.Ending","week.day")] #"Cumulative Revocations", "Revocation/ Verified", "Revocations per week", 
+base <- recr_veri_wk[,c("recruit.week", "Week.Starting", "Week.Ending","week.day")] #"Cumulative Revocations", "Revocation/ Verified", "Revocations per week", 
 #colnames(base)[2] <- "week.date"
 for (v in 1:length(var.select)){
   base$x <- recr_veri_wk[,var.select[v]]
@@ -3726,33 +3911,46 @@ for (v in 1:length(var.select)){
 }
 
 ##Mar. 27, 2023, as Amelia 
-# box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-#          client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
-# box_setwd(dir_id = 200244295811)
-# 
-# box_write(object = base[which(base$Week.Starting < as.Date(currentDate) & base$Week.Ending < as.Date(currentDate)),], file_name =paste("CCC_metrics_weekly_log_labels_",currentDate,".csv",sep=""),na="",row.names=F)
+box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
+         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
+box_setwd(dir_id = 200244295811)
 
-write.csv(base[which(base$Week.Starting < as.Date(currentDate) & base$Week.Ending < as.Date(currentDate)),],paste("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/CCC_metrics_weekly_log_labels_",currentDate,".csv",sep=""),na="",row.names=F)
+box_write(object = base[which(base$Week.Starting < as.Date(currentDate) & base$Week.Ending < as.Date(currentDate)),], file_name =paste("CCC_metrics_weekly_log_labels_",currentDate,".csv",sep=""),na="",row.names=F)
 
+#write.csv(base,paste("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/CCC_metrics_weekly_log_labels_",currentDate,".csv",sep=""),na="",row.names=F)
+
+write.csv(base,paste("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/CCC_metrics_weekly_log_labels_updated_",currentDate,".csv",sep=""),na="",row.names=F)
 #write.csv(base,"~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/CCC_metrics_weekly_log_labels_03062023.csv",na.rm="",row.names=F)
 ###by site
+veri_act <- apply_labels(veri_act,d_827220437 = "Site",#RcrtES_Site_v1r0
+                         d_827220437 = c("HealthPartners"= 531629870, "Henry Ford Health System"=548392715, "Kaiser Permanente Colorado" = 125001209,
+                                         "Kaiser Permanente Georgia" = 327912200,"Kaiser Permanente Hawaii" = 300267574,"Kaiser Permanente Northwest" = 452412599,
+                                         "Marshfield Clinic Health System" = 303349821,"Sanford Health" = 657167265, "University of Chicago Medicine" = 809703864,
+                                         "National Cancer Institute" = 517700004,"National Cancer Institute" = 13,"Other" = 181769837))
 
-recruit.wk.active.site <- recr_resp[which(recr_resp$d_512820379==486306141 & as_date(recr_resp$recru_time) < currentDate),] %>%      arrange(Site,Week.Sunday) %>% group_by(Site,Week.Sunday,Week.Sunday.date) %>%
+veri_act$site <- factor(veri_act$d_827220437,exclude=NULL,
+                        levels=c("HealthPartners", "Henry Ford Health System","Marshfield Clinic Health System",
+                                 "Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado",
+                                 "Kaiser Permanente Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest",
+                                 "National Cancer Institute","Other"))
+
+recruit.wk.active.site <- veri_resp[which(veri_resp$d_512820379==486306141),] %>% arrange(site,recruit.week) %>%
+  group_by(site,recruit.week,recruit.week.date) %>%
   dplyr::summarize(active_recruits=n(),
                    recruitdate_max=max(recru_time,rm.na=T))
 
-verified.wk.active.site <- veri_act[which(as_date(veri_act$verified_time) < currentDate & veri_act$d_512820379==486306141),] %>%  arrange(site,Verified.Sunday) %>% group_by(site,Verified.Sunday,Verified.Sunday.date) %>%
+verified.wk.active.site <- veri_resp[which(veri_resp$d_821247024 == 197316935 & veri_resp$d_512820379==486306141),] %>% 
+  arrange(site,verified.week) %>% group_by(site,verified.week,verified.week.date) %>%
   dplyr::summarize(active_verifieds=n(),
                    verified_activetime.max=max(verified_time,rm.na=T))
 
-verified.wk.total.site <- veri_act[which(as_date(veri_act$verified_time) < currentDate & veri_act$d_821247024 == 197316935),] %>% arrange(site,Verified.Sunday) %>% 
-  group_by(site,Verified.Sunday,Verified.Sunday.date) %>%
+verified.wk.total.site <- veri_resp[which(veri_resp$d_821247024 == 197316935),] %>% arrange(site,verified.week) %>% 
+  group_by(site,verified.week,verified.week.date) %>%
   dplyr::summarize(total_verifieds=n(),
                    verified_time.max=max(verified_time,rm.na=T))
 
-verified.all.site <- merge(verified.wk.total.site,verified.wk.active.site, by.x=c("site","Verified.Sunday","Verified.Sunday.date"), by.y=c("site","Verified.Sunday","Verified.Sunday.date"), all.y=TRUE,all.x=TRUE)
-
-recrui_wk_verified.site <- merge(recruit.wk.active.site,verified.all.site, by.x=c("Site","Week.Sunday","Week.Sunday.date"),by.y=c("site","Verified.Sunday","Verified.Sunday.date"),all.y=TRUE,all.x=TRUE)
+verified.all.site <- merge(verified.wk.total.site,verified.wk.active.site, by.x=c("site","verified.week","verified.week.date"), by.y=c("site","verified.week","verified.week.date"),all.y=TRUE,all.x=TRUE)
+recrui_wk_verified.site <- merge(recruit.wk.active.site,verified.all.site, by.x=c("site","recruit.week","recruit.week.date"),by.y=c("site","verified.week","verified.week.date"),all.y=TRUE,all.x=TRUE)
 recrui_wk_verified.site <- recrui_wk_verified.site %>% mutate_at(c("active_recruits","active_verifieds","total_verifieds"),~replace_na(., 0))
 
 recrui_wk_verified.site <- recrui_wk_verified.site %>% 
@@ -3760,34 +3958,33 @@ recrui_wk_verified.site <- recrui_wk_verified.site %>%
          total_recruits = total_verifieds + active_recruits - active_verifieds)
 
 ###verified group
-eligible.wk.total.site <- veri_act %>% 
-  filter(., eligible.time < currentDate & d_130371375_d_266600170_d_731498909 ==353358909 ) %>%  
-  group_by(site,eligible.Sunday) %>%
+eligible.wk.total.site <- veri_resp[which(veri_resp$d_821247024 == 197316935 & veri_resp$d_130371375_d_266600170_d_731498909 ==353358909 ),] %>% 
+  group_by(site,eligible.week) %>%
   dplyr::summarize(total_eligible=n(),
-                   eligible.time.max=max(eligible.time,rm.na=T))
+                   eligible.time.max=max(elgible.time,rm.na=T))
 
-module.wk.total.site <- filter(veri_act,d_100767870==353358909 & module.time < currentDate) %>% arrange(site,module.week,verified.week)  %>%
+module.wk.total.site <- filter(veri_act,d_100767870==353358909) %>% arrange(site,module.week,verified.week)  %>%
   group_by(site,module.week)%>%
   dplyr::summarize(total_module=n(),
                    module.time.max=max(as_date(module.time),rm.na=T))
 
-anybio.wk.total.site <- filter(veri_act,biospeDonation!= "No Sample Donations" & bioany.time < currentDate) %>% arrange(site,anybio.week,verified.week) %>% 
+anybio.wk.total.site <- filter(veri_act,biospeDonation!= "No Sample Donations") %>% arrange(site,anybio.week,verified.week) %>% 
   group_by(site,anybio.week)%>%
   dplyr::summarize(total_anybio=n(),
                    anybio.time.max=max(bioany.time,rm.na=T))
 
 
 biocol.wk.total.site <- filter(veri_act, (biospeDonation =="Completed All 3 Sample Donations" | 
-                                            (d_173836415_d_266600170_d_592099155==664882224 & d_878865966 == 353358909 & d_167958071 == 353358909) & biocol.time < currentDate))%>% 
+                                            (d_173836415_d_266600170_d_592099155==664882224 & d_878865966 == 353358909 & d_167958071 == 353358909)))%>% 
   arrange(site,biocol.week,verified.week) %>% 
   group_by(site,biocol.week)%>%
   dplyr::summarize(total_biocol=n(),
                    biocol.time.max=max(biocol.time,rm.na=T))
 
-allacts.wk.total.site <- filter(veri_act,allacts==353358909 & allacts.time < currentDate) %>% arrange(site,allacts.week,verified.week) %>% 
-  group_by(site,allacts.week)%>%
+allacts.wk.total.site <- filter(veri_act,allacts1==353358909) %>% arrange(site,allacts.week1,verified.week) %>%
+  group_by(site,allacts.week1)%>%
   dplyr::summarize(total_allacts=n(),
-                   allacts.time.max=max(allacts.time,rm.na=T))
+                   allacts.time.max=max(allacts.time1,rm.na=T))
 #revoke.wk.total <- veri_act[which(veri_act$HIPAARevVer  ==353358909 ),] %>% 
 #  group_by(revoke.week) %>%
 #  dplyr::summarize(total_revoke=n())
@@ -3801,17 +3998,17 @@ wdconsent.wk.total.site <- filter(veri_act,WdConsentVer ==353358909 & !is.na(wdc
   dplyr::summarize(total_wdconsent=n())
 
 
-veri_wk_eligble.site <- merge(verified.wk.total.site, eligible.wk.total.site,by.x=c("site","Verified.Sunday"),by=c("site","eligible.Sunday"), all.x=TRUE,all.y=TRUE)
-veri_wk_eligble.site <- merge(veri_wk_eligble.site, module.wk.total.site,by.x=c("site","Verified.Sunday"),by=c("site","module.week"), all.x=TRUE,all.y=TRUE)
-veri_wk_eligble.site <- merge(veri_wk_eligble.site,anybio.wk.total.site,by.x=c("site","Verified.Sunday"),by=c("site","anybio.week"), all.x=TRUE,all.y=TRUE)
-veri_wk_eligble.site <- merge(veri_wk_eligble.site, biocol.wk.total.site,by.x=c("site","Verified.Sunday"),by=c("site","biocol.week"), all.x=TRUE,all.y=TRUE)
-veri_wk_eligble.site <- merge(veri_wk_eligble.site, dtdestroy.wk.total.site,by.x=c("site","Verified.Sunday"),by=c("site","dtdestroy.week"), all.x=TRUE,all.y=TRUE)
-veri_wk_eligble.site <- merge(veri_wk_eligble.site, wdconsent.wk.total.site,by.x=c("site","Verified.Sunday"),by=c("site","wdconsent.week"), all.x=TRUE,all.y=TRUE)
-veri_wk_eligble.site <- merge(veri_wk_eligble.site, allacts.wk.total.site,by.x=c("site","Verified.Sunday"),by=c("site","allacts.week"), all.x=TRUE,all.y=TRUE)
+veri_wk_eligble.site <- merge(verified.wk.total.site, eligible.wk.total.site,by.x=c("site","verified.week"),by=c("site","eligible.week"), all.x=TRUE,all.y=TRUE)
+veri_wk_eligble.site <- merge(veri_wk_eligble.site, module.wk.total.site,by.x=c("site","verified.week"),by=c("site","module.week"), all.x=TRUE,all.y=TRUE)
+veri_wk_eligble.site <- merge(veri_wk_eligble.site,anybio.wk.total.site,by.x=c("site","verified.week"),by=c("site","anybio.week"), all.x=TRUE,all.y=TRUE)
+veri_wk_eligble.site <- merge(veri_wk_eligble.site, biocol.wk.total.site,by.x=c("site","verified.week"),by=c("site","biocol.week"), all.x=TRUE,all.y=TRUE)
+veri_wk_eligble.site <- merge(veri_wk_eligble.site, dtdestroy.wk.total.site,by.x=c("site","verified.week"),by=c("site","dtdestroy.week"), all.x=TRUE,all.y=TRUE)
+veri_wk_eligble.site <- merge(veri_wk_eligble.site, wdconsent.wk.total.site,by.x=c("site","verified.week"),by=c("site","wdconsent.week"), all.x=TRUE,all.y=TRUE)
+veri_wk_eligble.site <- merge(veri_wk_eligble.site, allacts.wk.total.site,by.x=c("site","verified.week"),by=c("site","allacts.week1"), all.x=TRUE,all.y=TRUE)
 
 #veri_wk_eligble.site <- veri_wk_eligble.site %>% mutate_at(vars(matches("total")),~replace_na(., 0))
 
-recr_veri_wk.site <-  merge(recrui_wk_verified.site,veri_wk_eligble.site, by.x=c("Site","Week.Sunday", "verified_time.max","total_verifieds"),by.y=c("site","Verified.Sunday", "verified_time.max","total_verifieds"),all.x=TRUE,all.y=TRUE)
+recr_veri_wk.site <-  merge(recrui_wk_verified.site,veri_wk_eligble.site, by.x=c("site","recruit.week", "verified_time.max","total_verifieds"),by.y=c("site","verified.week", "verified_time.max","total_verifieds"),all.x=TRUE,all.y=TRUE)
 
 vars0 <- c("active_recruits","active_verifieds","passive_verifieds", "total_recruits","total_verifieds","total_module",
            "total_anybio","total_eligible","total_biocol","total_dtdestroy","total_wdconsent","total_allacts")
@@ -3819,19 +4016,19 @@ vars0 <- c("active_recruits","active_verifieds","passive_verifieds", "total_recr
 
 recr_veri_wk.site <- recr_veri_wk.site %>% mutate_at(vars0,~replace_na(., 0))
 #recr_veri_wk.site <- recr_veri_wk.site %>% mutate_at(c("active_recruits","active_verifieds","passive_verifieds"),~replace_na(., 0))
-recr_veri_wk.site$Week.Sunday.date <- as_date(ifelse(is.na(recr_veri_wk.site$Week.Sunday.date), recrstart.date + days(2)+dweeks(recr_veri_wk.site$Week.Sunday-1),recr_veri_wk.site$Week.Sunday.date))
-recr_veri_wk.site$Week.Starting <- recr_veri_wk.site$Week.Sunday.date - days(6)
+recr_veri_wk.site$recruit.week.date <- as_date(ifelse(is.na(recr_veri_wk.site$recruit.week.date), recrstart.date + days(2)+dweeks(recr_veri_wk.site$recruit.week-1),recr_veri_wk.site$recruit.week.date))
+recr_veri_wk.site$Week.Starting <- recr_veri_wk.site$recruit.week.date - days(6)
 recr_veri_wk.site$week.day <- wday(recr_veri_wk.site$Week.Starting,label=TRUE,abbr=F)
-recr_veri_wk.site$Week.Ending <- recr_veri_wk.site$Week.Sunday.date
+recr_veri_wk.site$Week.Ending <- recr_veri_wk.site$recruit.week.date
 
 site_recruit_verified <- list()
-Site <- levels(droplevels(recr_veri_wk.site$Site))
-for(i in 1:length(Site)){
-  s = Site[i]
-  subs.recrui_verified <- filter(recr_veri_wk.site,Site==s)
+site <- levels(droplevels(recr_veri_wk.site$site))
+for(i in 1:length(site)){
+  s = site[i]
+  subs.recrui_verified <- filter(recr_veri_wk.site,site==s)
   #subs.recrui_verified[is.na(subs.recrui_verified)] = 0
   
-  subs.recrui_verified <- subs.recrui_verified %>% arrange(Week.Sunday,Week.Sunday.date)
+  subs.recrui_verified <- subs.recrui_verified %>% arrange(recruit.week,recruit.week.date)
   subs.recrui_verified$active_verifieds.cum <- cumsum(subs.recrui_verified$active_verifieds)
   subs.recrui_verified$passive_verifieds.cum <- cumsum(subs.recrui_verified$total_verifieds-subs.recrui_verified$active_verifieds)
   subs.recrui_verified$cum.total_verifieds <- cumsum(subs.recrui_verified$total_verifieds)
@@ -3847,7 +4044,7 @@ for(i in 1:length(Site)){
   subs.recrui_verified$cum.total.response.rate <- 100*(cumsum(subs.recrui_verified$total_verifieds)/cumsum(subs.recrui_verified$active_recruits))
   
   
-  subs.recr_veri_wk <- subs.recrui_verified %>% arrange(Week.Sunday)%>% 
+  subs.recr_veri_wk <- subs.recrui_verified %>% arrange(recruit.week)%>% 
     mutate(total_anybio.cum=cumsum(total_anybio),
            anybio.invite.ratio=100*cumsum(total_anybio)/active_recruits.cum,
            anybio.verified.ratio=100*cumsum(total_anybio)/cum.total_verifieds,
@@ -3888,33 +4085,37 @@ for(i in 1:length(Site)){
               "Survey Response Ratio among Verified = All Baseline Surveys/ Verified", "Survey Completion per week", 
               "Cumulative Incentive Eligible", "Incentive Eligible Response Ratio among Invited = Incentive Eligible/ Invited", 
               "Incentive Eligible Response Ratio among Verified = Incentive Eligible/ Verified", "Incentive Eligible  per week ", 
-              "Cumulative Completed All Participant Study Activities", "Completed All Participant Study Activity Response Ratio among Invited = Completed All Activities/ Invited", 
-              "Completed All Participant Study Activity Response Ratio among Verified = Completed All Activities/ Verified", 
-              "Completed all Participant Study Activities per week",
+              "Cumulative Completed BL Survey+Blood", "Completed BL Survey+Blood Response Ratio among Invited = Completed BL Survey+Blood/ Invited", 
+              "Completed BL Survey+Blood Response Ratio among Verified = Completed BL Survey+Blood/ Verified", 
+              "Completed BL Survey+Blood per week",
               "Cumulative Withdrawals", "Withdrawal/ Verfied", "Withdrawals per week ", "Cumulative Data Destruction", "Data Destruction/ Verified", 
               "Data Destruction per week", "Available for Analysis (Verified - Data Destruction)", "Available for Follow-up (Verified - Withdrawals)")
   
-  sub.base <- subs.recr_veri_wk[,c("Site","Week.Sunday", "Week.Starting", "Week.Ending", "week.day")] #"Cumulative Revocations", "Revocation/ Verified", "Revocations per week", 
+  sub.base <- subs.recr_veri_wk[,c("site","recruit.week", "Week.Starting", "Week.Ending", "week.day")] #"Cumulative Revocations", "Revocation/ Verified", "Revocations per week", 
   #colnames(sub.base)[3] <- "Week Date"
   for (v in 1:length(var.select)){
     sub.base$x <- subs.recr_veri_wk[,var.select[v]]
     colnames(sub.base)[v+5] <- labels[v]
   }
   
-  write.csv(sub.base[which(sub.base$Week.Starting < as.Date(currentDate) & sub.base$Week.Ending < as.Date(currentDate)),],paste(outputpath,"CCC_metrics_weekly_log_labels_",Site[i],currentDate,".csv", sep=""),na="",row.names=F)
+  #write.csv(sub.base[which(subs.recr_veri_wk$Week.Starting != currentDate),],paste("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/CCC_metrics_weekly_log_labels_",site[i],"03202023.csv", sep=""))
+  write.csv(sub.base[which(subs.recr_veri_wk$Week.Starting != currentDate),],paste(outputpath,"CCC_metrics_weekly_log_labels_",site[i],currentDate,".csv", sep=""),na="",row.names=F)
   
-  # box_write(object = sub.base[which(sub.base$Week.Starting < as.Date(currentDate) & sub.base$Week.Ending < as.Date(currentDate)),], file_name =paste("CCC_metrics_weekly_log_labels_",Site[i],currentDate,".csv",sep=""),na="",row.names=F)
+  box_write(object = sub.base[which(sub.base$Week.Starting < as.Date(currentDate) & sub.base$Week.Ending < as.Date(currentDate)),], file_name =paste("CCC_metrics_weekly_log_labels_",site[i],currentDate,".csv",sep=""),na="",row.names=F)
   
-  site_recruit_verified[[i]] <- sub.base
-  
-  write.csv(sub.base,paste(outputpath,"CCC_metrics_weekly_log",Site[i],currentDate,".csv", sep=""),na="",row.names=F)
-  
+  site_recruit_verified[[i]] <- subs.recr_veri_wk
+  #write.csv(subs.recr_veri_wk,paste("~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/CCC_metrics_weekly_log",site[i],"03202023.csv", sep=""))
+  write.csv(subs.recr_veri_wk,paste(outputpath,"CCC_metrics_weekly_log",site[i],currentDate,".csv", sep=""),na="",row.names=F)
+ 
+##to get the refusal and withdrawl data
+ending.time <- Sys.time() 
+
+process.time=ending.time-starting.time
+print(process.time)   
 }  
 
 ```
 
-```{r time, timeit = TRUE,results='hold'}
-ending.time <-Sys.time()
-processing.time <- difftime(ending.time, starting.time,units="mins")
-processing.time
+
 ```
+
