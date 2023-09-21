@@ -1,0 +1,1509 @@
+---
+title: "Connect_Aggregate_Tables_07142023"
+author: "JingWU"
+date: "`r format(Sys.Date(), '%d %B, %Y')`"
+
+
+output:
+  pdf_document:
+    extra_dependencies:
+    - float
+    toc: yes
+    toc_depth: 2
+    keep_tex: yes
+    fig_width: 10
+    fig_height: 7
+    fig_caption: yes
+    latex_engine: xelatex
+    df_print: paged
+
+header-includes: \usepackage[labelformat=empty]{caption}
+
+# knit: (function(inputFile, encoding) {rmarkdown::render("~/Documents/GitHub/Jeanconnect/Consolidated_Weekly_Report_4Pipeline_BQupdated_06082023.Rmd", output_file=paste("~/Documents/GitHub/Jeanconnect/Connect_WeeklyOperationsMetrics_", Sys.Date(), ".pdf", sep=""))})
+
+---
+
+ Jul. 10, 2023 the request from Dr. Mia Gaudet:
+ Each site sent us aggregated data about the eligible catchment population at their health care system by 5-year age categories 30-70 for sex, race/ethnicity, insurance, urbanicity, and socioeconomic status (1st tab in spreadsheet) as well as race by age and sex (2nd tab). I have the following requests:
+  
+ 1.	Merge each site’s data. Assume for cells with <6 (used by the KP sites) that the value is 5. Some reformatting of the site-specific data may be required (e.g., HP categorized race by Hispanic (yes, no, unknown).
+ 2.	Produce a table of Ns and % for each variable stratified by age by site.
+ 3.	Produce a table for race by age and sex by site.
+ 4.	Produce a table of Ns and % for the totals of each variable stratified by age across sites using all age categories (30-70) 
+ 5.	Produce a table of Ns and % for the totals of race stratified by age and sex across sites using all age categories (30-70)
+
+  The data tables are in a separate folder for each site:
+    
+  KP-NW: https://nih.app.box.com/file/1235294829859
+  KP-GA: https://nih.app.box.com/file/1235278066139
+  KP-CO: https://nih.app.box.com/file/1235258011381
+  KP-HI: https://nih.app.box.com/file/1235355598665
+  Uchicago: https://nih.app.box.com/file/1235151197170?s=2bfi7hw8n37nfy3qtyc6abjrdgdrft28
+  Marshfield: https://nih.app.box.com/file/1235343142710
+  Sanford: https://nih.app.box.com/file/1255674235307
+  HFH: https://nih.app.box.com/file/1236916520996
+  HP: https://nih.app.box.com/file/1235111955194
+  
+```{r setup, include=FALSE,eval=TRUE,echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#library(DBI) #the higher level BQ for working
+#library(bigrquery) 
+library(data.table) ###to write or read and data management 
+library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management https://tidyselect.r-lib.org/reference/faq-external-vector.html
+library(dplyr) ###data management some functions are not available in the dplyr masked in the tidyverse
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+#library(sqldf) ##sql
+#library(lubridate) ###date time it is already masked in 'tidyverse'
+library(ggplot2) ###plots
+library(ggpubr) ###for the publications of plots
+library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
+library(gridExtra)
+#library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tidyr)
+library(tinytex) #for pdf
+library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html t
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+#library(summarytools) ##recommended not applied in this R code
+library(gmodels) ##recommended but not applied in this R code
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+#library(patchwork)
+library(rio)
+library(readxl)
+
+# Jul. 10, 2023 the request from Mia Gaudet:
+## Each site sent us aggregated data about the eligible catchment population at their health care system by 5-year 
+##  age categories 30-70 for sex, race/ethnicity, insurance, urbanicity, and socioeconomic status (1st tab in spreadsheet) 
+##  as well as race by age and sex (2nd tab). I have the following requests:
+  
+###  1.	Merge each site’s data. Assume for cells with <6 (used by the KP sites) that the value is 5. Some 
+###     reformatting of the site-specific data may be required (e.g., HP categorized race by Hispanic (yes, no, 
+###     unknown).
+###  2.	Produce a table of Ns and % for each variable stratified by age by site.
+###  3.	Produce a table for race by age and sex by site.
+###  4.	Produce a table of Ns and % for the totals of each variable stratified by age across sites using all age categories (30-70) 
+###  5.	Produce a table of Ns and % for the totals of race stratified by age and sex across sites using all age categories (30-70)
+
+# The data tables are in a separate folder for each site:
+#   
+# KP-NW: https://nih.app.box.com/file/1235294829859
+# KP-GA: https://nih.app.box.com/file/1235278066139
+# KP-CO: https://nih.app.box.com/file/1235258011381
+# KP-HI: https://nih.app.box.com/file/1235355598665
+# Uchicago: https://nih.app.box.com/file/1235151197170?s=2bfi7hw8n37nfy3qtyc6abjrdgdrft28
+# Marshfield: https://nih.app.box.com/file/1235343142710
+# Sanford: https://nih.app.box.com/file/1255674235307
+# HFH: https://nih.app.box.com/file/1236916520996
+# HP: https://nih.app.box.com/file/1235111955194
+
+##All these tables are saved in my folder "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/Mia_Requests/AggregateTables/"
+###Updates: July 12, 2023
+# July 12, 2023, With Dr. Gaudet's helps with the clarifications on some unclear classification of Insurance, race ethinicity:
+# 1. due to the differences on the insurance between KP sites and non-KP sites, Mia helped me to regroup them into:
+# a. Medicare: all insurances related Medicare;
+# b. Medicaid: all insurances related Medicaid + other Public ( which HP group has);
+# c. Commercial/Private: Commerical/Private + private pay;
+# d. Military: VA/CHAMP + Tricate/military;
+# e. uninsured: Uninsured/Selfpaid
+# f. Other: Other, Worker's Comp;
+# g. Unknown
+# 
+# With Dr. Gaudet's approval, I will use the maxisum number of total by Age in UChicago group because of their missing of the total Ns in their original sheet;
+# 
+# The sheet of KPCO doesn't provide the info. by Age, gender on Race
+
+inputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/Mia_Requests/AggregateTables/workingdata/"
+
+tb_xlsx <- list.files(inputpath, pattern = "*.xlsx", recursive = TRUE)  
+
+tb_xlsx
+# [1] "Enterprise 30-70 Catchment Population Request June 2023.xlsx" 
+# [2] "FINALPROOF_Catchment Population Request May 2023.xlsx"       
+# [3] "HP_Age_AggRpt_2023.06.09.xlsx"          this table need specific treatments                       
+# [4] "KPCO_Age_Adjusted_Catchment_Counts_share_20230608.xlsx"      
+# [5] "KPGA_Age_Adjusted_Catchment_Counts_20230608.xlsx"            
+# [6] "KPHI_Age_Adjusted_Catchment_Counts_20230609.xlsx"            
+# [7] "KPNW_Age_Adjusted_Catchment_Counts_20230608_mask.xlsx"       
+# [8] "marshfield_catchment_population_request_may 2023.xlsx"       
+# [9] "UChicago Catchment Population Request May 2023.xlsx"   this table need specific treatments  
+
+Age <- c("30-34",  "35-39","40-45","46-50","51-55","56-60","61-65","66-70")
+
+###Aug. 8, 2023, Mia's new request on the UChicago's cathcment data: https://nih.app.box.com/file/1276005860923
+##as Mia' ask to update the UChicago's data in previous aggregate tables.
+
+box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
+         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
+
+box_setwd(dir_id = 172265415154)
+UChi <- box_read(file_id = 1276005860923,sheet=1)
+
+empty_columns <- colSums(is.na(UChi) | UChi == "") == nrow(UChi)
+UChi <- UChi[,!empty_columns]
+col.n <- ncol(UChi)
+
+tmp <- UChi[-c(1:3),]
+names(tmp) <- UChi[3,]
+tmp <- tmp %>% mutate(across(contains(Age),~ gsub("n/a|-","",.x)))
+#tmp[] <- lapply(tmp, gsub, pattern='n/a|-', replacement=NA)
+
+cnames <- names(tmp)
+#  to check variables in recr_noinact_wl1
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(tmp,varname)
+  tmp[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+#site <- trimws(gsub("Catchment Population for ","",colnames(UChi)[1])) 
+#colnames(tmp1)[1] <- paste(site,colnames(tmp1)[1],sep="_")
+site<- unlist(strsplit(colnames(UChi)[1]," "))[[4]]
+#write.csv(tmp1,paste(outputpath,"Aggregate_Table_",site,CurrentDate,".csv",sep=""), row.names = F,na="")
+
+row_vec <- c(as.numeric(row.names(tmp)[which(grepl("Overall|Sex|Race|Insurance|Urbanicity|Socioeconomic Status",tmp$Factor))])-3, 1+nrow(tmp))
+
+times <- diff(row_vec)
+groups <- c("Overall","Sex","Race","Insurance","Urbanicity","SES")
+
+newcol <- NULL
+for (m in 1:length(groups)){
+  
+  vet <- rep(groups[m],each=times[m])
+  newcol <- c(newcol,vet)
+}
+
+tmp <- cbind(tmp,newcol)
+
+tmp1 <- filter(tmp , rowSums(is.na(tmp[,Age])) < 9) %>% 
+  mutate(new_group= case_when(newcol=="Overall" & Factor=="Overall" ~ "Overall",
+                              newcol=="Sex" & Factor == "Female" ~ "Female",
+                              newcol=="Sex" & Factor == "Male" ~ "Male",
+                              newcol=="Sex" & grepl("Other",Factor) ~"Sex.Other",
+                              newcol=="Sex" & grepl("Unknown|Missing", Factor) ~"Sex.Unknown/ Missing",
+                              newcol=="Sex" & Factor=="Total" ~"Sex.Total",
+                              newcol=="Race" & grepl("White",Factor) & grepl("Non-Hispanic/Latinx",Factor) ~ "White",
+                              newcol=="Race" & grepl("Asian",Factor) & grepl("Non-Hispanic/Latinx", Factor) ~ "Asian/ Middle Eastern",
+                              newcol=="Race" & grepl("Black",Factor) & grepl("Non-Hispanic/Latinx",Factor) ~ "Black/ African-American",
+                              newcol=="Race" & grepl("Hawaiian",Factor) & grepl("Non-Hispanic/Latinx",Factor) ~ "Native Hawaiian/ Other Pacific Islander",
+                              newcol=="Race" & grepl("Indian",Factor) & grepl("Non-Hispanic/Latinx", Factor) ~ "American Indian/ Alaskan Native",
+                              newcol=="Race" & grepl("More|Multi-racial",Factor) & grepl("Non-Hispanic/ Latinx", Factor) ~ "Multi-racial/ Other",
+                              newcol=="Race" & grepl("\\(Hispanic",Factor) ~ "Hispanic/ Latinx",
+                              newcol=="Race" & grepl("Unknown",Factor) & grepl("Non-Hispanic/Latinx",Factor) ~ "Race.Unknown",
+                              newcol=="Race" & Factor=="Total" ~"Race.Total",
+                              newcol=="Insurance" & grepl("Private|Commerical",Factor) & !grepl("Medic", Factor) ~ "Private/Commercial",
+                              newcol=="Insurance" & grepl("Medicare",Factor) & !grepl("Medicaid", Factor) ~ "Medicare",  
+                              newcol=="Insurance" & grepl("Medicaid", Factor) ~ "Medicaid",
+                              newcol=="Insurance" & grepl("VA|Tricare", Factor) ~ "Military",
+                              newcol=="Insurance" & grepl("Other|Worker", Factor) ~"Other",
+                              newcol=="Insurance" & grepl("Uninsured", Factor) ~ "Uninsured",
+                              newcol=="Insurance" & grepl("Unknown", Factor) ~ "Insurance.Unknown",
+                              newcol=="Insurance" & Factor=="Total" ~"Insurance.Total",
+                              newcol=="Urbanicity" & Factor == "RUCA Code 1" ~ "RUCA Code 1",
+                              newcol=="Urbanicity" & grepl("Code 2", Factor) ~ "RUCA Code 2",                            
+                              newcol=="Urbanicity" & grepl("Code 3", Factor) ~ "RUCA Code 3",
+                              newcol=="Urbanicity" & grepl("Code 4", Factor) ~ "RUCA Code 4",                            
+                              newcol=="Urbanicity" & grepl("Code 5", Factor) ~ "RUCA Code 5",
+                              newcol=="Urbanicity" & grepl("Code 6", Factor) ~ "RUCA Code 6",                            
+                              newcol=="Urbanicity" & grepl("Code 7", Factor) ~ "RUCA Code 7",
+                              newcol=="Urbanicity" & grepl("Code 8", Factor) ~ "RUCA Code 8",                            
+                              newcol=="Urbanicity" & grepl("Code 9", Factor) ~ "RUCA Code 9",
+                              newcol=="Urbanicity" & grepl("Code 10",Factor)  ~ "RUCA Code 10",
+                              newcol=="Urbanicity" & grepl("Unknown", Factor) ~ "Urbanicity.Unknown", 
+                              newcol=="Urbanicity" & grepl("Total", Factor) ~ "Urbanicity.Total", 
+                              newcol=="SES" & grepl("scores 1-25", Factor) ~ "First Quartile (ADI scores 1-25)",
+                              newcol=="SES" & grepl("scores 26-50", Factor) ~ "Second Quartile (ADI scores 26-50)",
+                              newcol=="SES" & grepl("scores 51-75", Factor) ~ "Third Quartile (ADI scores 51-75)",
+                              newcol=="SES" & grepl("scores 76-100", Factor) ~ "Fourth Quartile (ADI scores 76-100)",
+                              newcol=="SES" & grepl("Unknown",Factor) ~"SES.Unknown/ Missing",
+                              newcol=="SES" & grepl("Total", Factor) ~ "SES.Total"
+  ))
+
+tmp1 <- filter(tmp1, !grepl("Poverty",Factor))
+# total <-filter(tmp1, newcol == "Insurance") %>% group_by(newcol) %>% 
+#   janitor::adorn_totals()
+# total$newcol <- gsub("-","Overall", total$newcol)
+# total$new_group <- gsub("-","Overall", total$new_group)
+# mutate(across(contains(Age),~sum(.x,na.rm=TRUE)))
+
+#tmp1 <- rbind(tmp1,total[which(total$Factor=="Total"),])
+
+tmp2 <- tmp1[-c(32:36),] %>% group_by(newcol,new_group) %>% mutate(across(contains(Age),~sum(.x,na.rm=TRUE))) 
+tmp2 <- tmp2[!duplicated(tmp2$new_group),]
+
+#site <- trimws(gsub("Catchment Population for ","",colnames(df)[1])) 
+col_pct <- function(x) { 
+  ifelse(!is.na(x), paste0(format(round(x,0),big.mark=","), " ( ",round(100*x/max(x,na.rm=TRUE),2), "%)"), " ")
+}
+
+Age_UCh <- as_tibble(tmp2) %>% mutate(site = site,
+                           across(contains(Age), ~ col_pct(.x))) %>% 
+  select(newcol, new_group,contains(Age),Total,site)
+
+
+UChi2 <- box_read(file_id = 1276005860923,sheet=2)
+#tb <- readxl::read_xlsx(paste(inputpath,"UChicago Catchment Population Request May 2023.xlsx",sep=""),sheet=2)
+tb_ChC <- UChi2[-c(1:5),]
+
+names(tb_ChC)[1:10] <- c("Race.Ethnicity",paste0(UChi2[4,c(2:9)],"_Females"),UChi2[4,10])
+names(tb_ChC)[11:20] <- c(paste0(UChi2[4,c(11:18)],"_Males"),UChi2[4,c(19:20)])
+
+cnames <- names(tb_ChC)
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(tb_ChC,varname)
+  tb_ChC[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+UC_race <- tmp2[which(tmp2$newcol %in% c("Overall","Race")),] %>% mutate(Total=as.numeric(Total))
+
+missing <- as.data.frame(t(UC_race[c(1,10),c(2:10)]))
+names(missing) <- c("Overall","race.Total")
+missing$missing <- as.numeric(missing$Overall)-as.numeric(missing$race.Total)
+missing1 <- as.matrix(t(missing$missing),ncol=9,nrow=1,byrow=TRUE)
+missing1 <- as.data.frame(missing1)
+names(missing1) <- rownames(missing)
+missing1$Factor <- "missing"
+missing1$newcol<-"Race"
+missing1$new_group="Race.missing"
+cnames <- names(missing1)
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(missing1,varname)
+  missing1[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+                         
+UC_race1 <- bind_rows(as_tibble(UC_race),as_tibble(missing1)) #the missing by Age are the missing from Overall with Total Race by Age
+colnames(UC_race1)[2:10] <- paste(colnames(UC_race1)[2:10],"Overall",sep="_")
+
+###the Total from age data by sex and overall
+UC_sex <- as.data.frame(c(tmp2[which(tmp2$Factor=="Female"),c(2:10)],tmp2[which(tmp2$Factor=="Male"),c(2:10)],tmp2[which(tmp2$Factor=="Overall"),c(2:10)]))
+  
+colnames(UC_sex)[1:8] <- paste(names(tmp2)[2:9],"Females",sep="_")
+ colnames(UC_sex)[10:17] <- paste(names(tmp2)[2:9],"Males",sep="_")
+ colnames(UC_sex)[9] <- "Total Female"
+ colnames(UC_sex)[18] <- "Total Male"  
+ colnames(UC_sex)[19:26] <- names(tmp2)[2:9]
+ colnames(UC_sex)[27] <- "Total"
+cnames <- names(UC_sex)
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(UC_sex,varname)
+  missing1[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+ 
+UC_sex <- UC_sex %>% mutate(across(contains("Total"),~as.numeric(.)))
+  
+ UC_sex_missing <- rbind(UC_sex, tb_ChC1[which(tb_ChC1$Race.Ethnicity=="Total"),c(2:20,22:29)])
+ # UC_sex_missing$`Total Female` <- as.numeric(UC_sex_missing$`Total Female`)
+ # UC_sex_missing$`Total Male` <- as.numeric(UC_sex_missing$`Total Male`)
+ # UC_sex_missing$Total <- as.numeric(UC_sex_missing$Total)
+ # 
+ sex_missing <- (UC_sex_missing)[1,]-(UC_sex_missing)[2,] #the missing are the Overall, Total Females, 
+ #Total Males by Age with the missing in Female. Total, Male Total by Age and Sex
+ sex_missing$Race.Ethnicity <- "Missing"
+ sex_missing$Race<-"Race.missing" 
+ 
+tb_ChC$Site = unlist(strsplit(colnames(UChi2)[1]," "))[[4]]
+# tb_ChC <- tb_ChC %>% mutate(`30-34`= `30-34_Females` + `30-34_Males`,
+#                             `35-39` = `35-39_Females` + `35-39_Males`,
+#                             `40-45` = `40-45_Females` + `40-45_Males`,
+#                             `46-50` = `46-50_Females` + `46-50_Males`,
+#                             `51-55` = `51-55_Females` + `51-55_Males`,
+#                             `56-60` = `56-60_Females` + `56-60_Males`,
+#                             `61-65` = `61-65_Females` + `61-65_Males`,
+#                             `66-70` = `66-70_Females` + `66-70_Males`,
+                            # `30-34_Missing`= tmp2$`30-34`[which(tmp2$Factor=="Overall")] -(`30-34_Females` + `30-34_Males`),
+                            # `35-39_Missing` = tmp2$`35-39`[which(tmp2$Factor=="Overall")]- (`35-39_Females` + `35-39_Males`),
+                            # `40-45_Missing` = tmp2$`40-45`[which(tmp2$Factor=="Overall")]- (`40-45_Females` + `40-45_Males`),
+                            # `46-50_Missing` = tmp2$`46-50`[which(tmp2$Factor=="Overall")]- (`46-50_Females` + `46-50_Males`),
+                            # `51-55_Missing` = tmp2$`51-55`[which(tmp2$Factor=="Overall")]- (`51-55_Females` + `51-55_Males`),
+                            # `56-60_Missing` = tmp2$`56-60`[which(tmp2$Factor=="Overall")]- (`56-60_Females` + `56-60_Males`),
+                            # `61-65_Missing` = tmp2$`61-65`[which(tmp2$Factor=="Overall")]- (`61-65_Females` + `61-65_Males`),
+                            # `66-70_Missing` = tmp2$`66-70`[which(tmp2$Factor=="Overall")]- (`66-70_Females` + `66-70_Males`),
+                            #  Total_Missing =  tmp2$Total[which(tmp2$Factor=="Overall")] - tb_ChC$Total,
+tb_ChC <- tb_ChC %>% mutate(Race = case_when(grepl("White",Race.Ethnicity) & grepl("Non-Hispanic/Latinx",Race.Ethnicity) ~ "White",
+                                             grepl("Asian",Race.Ethnicity) & grepl("Non-Hispanic/Latinx", Race.Ethnicity) ~ "Asian/ Middle Eastern",
+                                             grepl("Black",Race.Ethnicity) & grepl("Non-Hispanic/Latinx",Race.Ethnicity) ~ "Black/ African-American",
+                                             grepl("Hawaiian",Race.Ethnicity) & grepl("Non-Hispanic/Latinx",Race.Ethnicity) ~ "Native Hawaiian/ Other Pacific Islander",
+                                             grepl("Indian",Race.Ethnicity) & grepl("Non-Hispanic/Latinx", Race.Ethnicity) ~ "American Indian/ Alaskan Native",
+                                             grepl("More|Multi-racial",Race.Ethnicity) & grepl("Non-Hispanic/Latinx", Race.Ethnicity) ~ "Multi-racial/ Other",
+                                             grepl("\\(Hispanic",Race.Ethnicity) ~ "Hispanic/ Latinx",
+                                             grepl("Unknown",Race.Ethnicity) & grepl("Non-Hispanic/Latinx",Race.Ethnicity) ~ "Race.Unknown",
+                                             Race.Ethnicity=="Total" ~"Race.Total"))
+                            
+tb_ChC1 <- tb_ChC %>% group_by(Race) %>% group_by(Race)%>% 
+mutate(across(where(is.numeric),~sum(.x, na.rm=TRUE))) %>% 
+  arrange(Race) %>% distinct(Race, .keep_all = TRUE) %>%
+  mutate(`30-34`= `30-34_Females` + `30-34_Males`,
+         `35-39` = `35-39_Females` + `35-39_Males`,
+         `40-45` = `40-45_Females` + `40-45_Males`,
+          `46-50` = `46-50_Females` + `46-50_Males`,
+          `51-55` = `51-55_Females` + `51-55_Males`,
+          `56-60` = `56-60_Females` + `56-60_Males`,
+           `61-65` = `61-65_Females` + `61-65_Males`,
+           `66-70` = `66-70_Females` + `66-70_Males`)
+
+tb_ChC2 <- bind_rows(tb_ChC1, sex_missing)   
+
+tb_ChC0 <- merge(tb_ChC2, UC_race1, by.x="Race",by.y="new_group") %>%
+  mutate(`30-34_Missing`= ifelse(Race!="Race.missing", `30-34_Overall` -(`30-34_Females` + `30-34_Males`),`30-34_Overall`),
+         `35-39_Missing` = ifelse(Race!="Race.missing",`35-39_Overall`- (`35-39_Females` + `35-39_Males`), `35-39_Overall`),
+         `40-45_Missing` = ifelse(Race!="Race.missing",`40-45_Overall`- (`40-45_Females` + `40-45_Males`),`40-45_Overall`),
+         `46-50_Missing` = ifelse(Race!="Race.missing",`46-50_Overall`- (`46-50_Females` + `46-50_Males`),`46-50_Overall`),
+         `51-55_Missing` = ifelse(Race!="Race.missing",`51-55_Overall`- (`51-55_Females` + `51-55_Males`),`51-55_Overall`),
+         `56-60_Missing` = ifelse(Race!="Race.missing",`56-60_Overall`- (`56-60_Females` + `56-60_Males`),`56-60_Overall`),
+         `61-65_Missing` = ifelse(Race!="Race.missing",`61-65_Overall`- (`61-65_Females` + `61-65_Males`),`61-65_Overall`),
+         `66-70_Missing` =ifelse(Race!="Race.missing" ,`66-70_Overall`- (`66-70_Females` + `66-70_Males`),`66-70_Overall`))
+
+Race.Age.Sex <- filter(tb_ChC0, Race %in% c("Race.Total", "Race.missing"))  %>% adorn_totals()
+
+
+tb_ChC_pct_sex <- bind_rows(tb_ChC0,Race.Age.Sex[which(Race.Age.Sex$Race=="Total"),]) %>% 
+  select(Race,contains(c("Female","Male")), all_of(Age),Total) %>% mutate(across(where(is.numeric), ~ col_pct(.x)))
+
+outputpath  <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/Mia_Requests/AggregateTables/Outputs/"
+write.csv(Age_UCh,paste(outputpath,"Aggregate_Table_UChicago_ByAge_",currentDate,".csv",sep=""), row.names = F,na="")
+write.csv(tb_ChC_pct_sex,paste(outputpath,"Aggregate_Table_UChicago_ByAgeSex_",currentDate,".csv",sep=""), row.names = F,na="")
+```
+
+#2. Produce a table of Ns and % for each variable stratified by age by site.
+#3.	Produce a table for race by age and sex by site.
+#4.	Produce a table of Ns and % for the totals of each variable stratified by age across sites using all age categories (30-70) 
+#5.	Produce a table of Ns and % for the totals of race stratified by age and sex across sites using all age categories (30-70)
+
+```{r, include=FALSE,eval=TRUE,echo=FALSE}
+#to download the recruitment data and corresponding Connect master DD
+options(knitr.table.format = "latex")
+currentDate <- Sys.Date()
+
+#for the common tables on non-KPsites: except HP and UChicago
+non.kp <- tb_xlsx[c(1,2,8)]
+df.list <- list()
+
+for (i in 1:length(non.kp)){
+  df <- readxl::read_xlsx(paste(inputpath,non.kp[i],sep=""),sheet=1)
+  empty_columns <- colSums(is.na(df) | df == "") == nrow(df)
+  df <- df[,!empty_columns]
+  col.n <- ncol(df)
+  df.list[[i]] <- df
+
+}
+
+#for the common tables on non-KPsites: except HP and UChicago
+
+numbers_only <- function(x) !grepl("\\D", x) 
+col_pct <- function(x) { 
+  ifelse(!is.na(x), paste0(format(round(x,0),big.mark=","), " ( ",round(100*x/max(x,na.rm=TRUE),2), "%)"), " ") }
+
+ age.list <- list()
+
+for (i in 1:3){
+  df <- readxl::read_xlsx(paste(inputpath,non.kp[i],sep=""),sheet=1)
+  empty_columns <- colSums(is.na(df) | df == "") == nrow(df)
+  df <- df[,!empty_columns]
+  col.n <- ncol(df)
+
+  tmp <- df[-c(1:3),]
+  names(tmp) <- unlist(df[3,])
+  tmp <- tmp %>% mutate(across(contains(Age),~ gsub("n/a|-","",.x)))
+  #tmp[] <- lapply(tmp, gsub, pattern='n/a|-', replacement=NA)
+  
+  cnames <- names(tmp)
+  #  to check variables in recr_noinact_wl1
+  for (j in 1: length(cnames)){
+    varname <- cnames[j]
+    var<-pull(tmp,varname)
+    tmp[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+  }
+  
+  # Military <- filter(tmp, grepl("VA|Tricare",Factor)) %>% janitor::adorn_totals()
+  #   mutate(Insurance.Military=across(contains("-"), ~ sum(.x,na.rm=TRUE))
+                  
+   #tmp1 <- rbind(tmp, c("Insurance.Military", colSums(tmp[which(grepl("VA|Tricare",tmp$Factor)),2:col.n],na.rm=TRUE)))
+  
+  
+  #tmp1 <- tmp1 %>% mutate(across(contains("-"), ~ col_pct(.x)))
+  site <- trimws(gsub("Catchment Population for ","",colnames(df)[1])) 
+  #colnames(tmp1)[1] <- paste(site,colnames(tmp1)[1],sep="_")
+   #site<- unique(ifelse(grepl("3",tmp1$site) ==TRUE, "HP", unique(tmp$site)))
+  #write.csv(tmp1,paste(outputpath,"Aggregate_Table_",site,CurrentDate,".csv",sep=""), row.names = F,na="")
+  
+  if(trimws(gsub("Catchment Population for ","",colnames(df)[1])) =="Sanford Health"){tmp <- tmp[-c(16:19),]}
+  
+  row_vec <- c(as.numeric(row.names(tmp)[which(grepl("Overall|Sex|Race|Insurance|Urbanicity|Socioeconomic Status",tmp$Factor))]), 1+nrow(tmp))
+  
+  times <- diff(row_vec)
+  groups <- c("Overall","Sex","Race","Insurance","Urbanicity","SES")
+  
+  newcol <- NULL
+  for (m in 1:length(groups)){
+    
+    vet <- rep(groups[m],each=times[m])
+    newcol <- c(newcol,vet)
+  }
+  
+  tmp <- cbind(tmp,newcol)
+  
+  tmp1 <- filter(tmp , newcol!="Ethnicity *" & rowSums(is.na(tmp[,Age])) < 8) %>% 
+    mutate(new_group= case_when(newcol=="Overall" & Factor=="Overall" ~ "Overall",
+                                newcol=="Sex" & Factor == "Female" ~ "Female",
+                                newcol=="Sex" & Factor == "Male" ~ "Male",
+                                newcol=="Sex" & grepl("Other",Factor) ~"Sex.Other",
+                                newcol=="Sex" & grepl("Unknown|Missing", Factor) ~"Sex.Unknown/ Missing",
+                                newcol=="Race" & grepl("White",Factor) ~ "White",
+                                newcol=="Race" & grepl("Asian",Factor) ~ "Asian/ Middle Eastern",
+                                newcol=="Race" & grepl("Black",Factor) ~ "Black/ African-American",
+                                newcol=="Race" & grepl("Hawaiian",Factor) ~ "Native Hawaiian/ Other Pacific Islander",
+                                newcol=="Race" & grepl("Indian",Factor) ~ "American Indian/ Alaskan Native",
+                                newcol=="Race" & grepl("Hispanic",Factor) ~ "Hispanic/ Latinx",
+                                newcol=="Race" & grepl("Multi-racial|More",Factor) ~ "Multi-racial/ Other",
+                                newcol=="Race" & grepl("Unknown",Factor) ~ "Race.Unknown",
+                                newcol=="Insurance" & grepl("Private|Commerical",Factor) & !grepl("Medic", Factor) ~ "Private/Commercial",
+                                newcol=="Insurance" & grepl("Medicare",Factor) & !grepl("Medicaid", Factor) ~ "Medicare",  
+                                newcol=="Insurance" & grepl("Medicaid", Factor) ~ "Medicaid",
+                                newcol=="Insurance" & grepl("VA|Tricare", Factor) ~ "Military",
+                                newcol=="Insurance" & grepl("Other|Worker", Factor) ~"Other",
+                                newcol=="Insurance" & grepl("Uninsured", Factor) ~ "Uninsured",
+                                newcol=="Insurance" & grepl("Unknown", Factor) ~ "Insurance.Unknown",
+                                newcol=="Urbanicity" & Factor== "RUCA Code 1" ~ "RUCA Code 1",
+                                newcol=="Urbanicity" & grepl("Code 2", Factor) ~ "RUCA Code 2",                            
+                                newcol=="Urbanicity" & grepl("Code 3", Factor) ~ "RUCA Code 3",
+                                newcol=="Urbanicity" & grepl("Code 4", Factor) ~ "RUCA Code 4",                            
+                                newcol=="Urbanicity" & grepl("Code 5", Factor) ~ "RUCA Code 5",
+                                newcol=="Urbanicity" & grepl("Code 6", Factor) ~ "RUCA Code 6",                            
+                                newcol=="Urbanicity" & grepl("Code 7", Factor) ~ "RUCA Code 7",
+                                newcol=="Urbanicity" & grepl("Code 8", Factor) ~ "RUCA Code 8",                            
+                                newcol=="Urbanicity" & grepl("Code 9", Factor) ~ "RUCA Code 9",
+                                newcol=="Urbanicity" & Factor== "RUCA Code 10" ~ "RUCA Code 10",
+                                newcol=="Urbanicity" & grepl("Unknown", Factor) ~ "Urbanicity.Unknown", 
+                                newcol=="SES" & grepl("scores 1-25", Factor) ~ "First Quartile (ADI scores 1-25)",
+                                newcol=="SES" & grepl("scores 26-50", Factor) ~ "Second Quartile (ADI scores 26-50)",
+                                newcol=="SES" & grepl("scores 51-75", Factor) ~ "Third Quartile (ADI scores 51-75)",
+                                newcol=="SES" & grepl("scores 76-100", Factor) ~ "Fourth Quartile (ADI scores 76-100)",
+                                newcol=="SES" & grepl("Unknown",Factor) ~"SES.Unknown/ Missing"
+                                  ))
+  
+  
+  
+  tmp1 <- tmp1 %>% group_by(newcol,new_group) %>% mutate(across(contains(Age),~sum(.x,na.rm=TRUE))) 
+  tmp1 <- tmp1[!duplicated(tmp1$new_group) & !is.na(tmp1$new_group),]
+  
+  #to recheck the overall number in Age sheet, to use the max among the sum by group as the Overall of each site
+  tmp1.total <- tmp1%>% group_by(newcol) %>% mutate(across(contains(Age),~sum(.x,na.rm=TRUE))) 
+  tmp1 <- tmp1 %>% mutate(`30-34`=ifelse(newcol=="Overall", max(tmp1.total$`30-34`), `30-34`),
+                          `35-39`=ifelse(newcol=="Overall", max(tmp1.total$`35-39`), `35-39`),
+                          `40-45`=ifelse(newcol=="Overall", max(tmp1.total$`40-45`), `40-45`),
+                          `46-50`=ifelse(newcol=="Overall", max(tmp1.total$`46-50`), `46-50`),
+                          `51-55`=ifelse(newcol=="Overall", max(tmp1.total$`51-55`), `51-55`),
+                          `56-60`=ifelse(newcol=="Overall", max(tmp1.total$`56-60`), `56-60`),
+                          `61-65`=ifelse(newcol=="Overall", max(tmp1.total$`61-65`), `61-65`),
+                          `66-70`=ifelse(newcol=="Overall", max(tmp1.total$`66-70`), `66-70`))
+  #site <- trimws(gsub("CONNECT - Catchment Population for ","",colnames(df)[1])) 
+  site <- trimws(gsub("Catchment Population for ","",colnames(df)[1])) 
+  tmp1$site<- site
+  
+  
+  if(trimws(gsub("Catchment Population for ","",colnames(df)[1])) == "Henry Ford Health"){Age_HFH <- tmp1}
+  else if(trimws(gsub("Catchment Population for ","",colnames(df)[1])) == "MCRI"){Age_MF <- tmp1}
+  else if(trimws(gsub("Catchment Population for ","",colnames(df)[1])) == "Sanford Health"){Age_SFH <- tmp1}
+} 
+  
+ Age_MF_pct <- as_tibble(Age_MF) %>% mutate(Total=rowSums(pick(contains(Age))),
+                                 across(contains(Age), ~ col_pct(.x))) %>% select(newcol, new_group,contains(Age),Total,site)
+ age.list[[8]] <- Age_MF_pct
+ Race <- c("White", "Black/ African-American", "Hispanic/ Latinx", "Asian/ Middle Eastern","American Indian/ Alaskan Native", "Native Hawaiian/ Other Pacific Islander", "Multi-racial/ Other", "Unknown")
+
+#	Produce a table for race by age and sex by site.
+ Age_sex.list<- list() # to save all the pct data of each site by Age and sex
+df2.list <- list()
+for (i in 1:length(tb_xlsx)){
+  if(length( excel_sheets( paste(inputpath,tb_xlsx[i],sep="") ) )>1){tb <- readxl::read_xlsx(paste(inputpath,tb_xlsx[i],sep=""),sheet=2)}
+  else{print(paste(tb_xlsx[i],"Stop",sep=" "))}
+  
+  empty_columns <- colSums(is.na(tb) | tb == "") == nrow(tb)
+  df2.list[[i]] <- as.data.frame(tb[,!empty_columns])
+
+}
+
+Age <- c("30-34",  "35-39","40-45","46-50","51-55","56-60","61-65","66-70")
+tb_SH <- df2.list[[1]] %>% filter(.,!is.na(`Catchment Population for <Site Name>`)) 
+tb_SH1 <- tb_SH[-c(1:3),]
+names(tb_SH1)[2:9] <- paste0(tb_SH[2,c(2:9)],"_Females")
+names(tb_SH1)[10:17] <- paste0(tb_SH[2,c(10:17)],"_Males")
+names(tb_SH1)[1] <- "Race.Ethnicity"
+cnames <- names(tb_SH1)
+    for (j in 1: length(cnames)){
+      varname <- cnames[j]
+      var<-pull(tb_SH1,varname)
+      tb_SH1[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+    }
+    
+col_pct2 <- function(x) { 
+  paste0(format(as.numeric(x),big.mark=","), " ( ",round(100*as.numeric(x)/sum(as.numeric(x),na.rm=TRUE),2), "%)") }
+  tb_SH1 <- tb_SH1  %>% mutate(Females.Total = rowSums(pick(c(2:9))),
+                               Males.Total = rowSums(pick(c(10:17))),
+                               `30-34`= `30-34_Females` + `30-34_Males`,
+                               `35-39` = `35-39_Females` + `35-39_Males`,
+                               `40-45` = `40-45_Females` + `40-45_Males`,
+                               `46-50` = `46-50_Females` + `46-50_Males`,
+                               `51-55` = `51-55_Females` + `51-55_Males`,
+                               `56-60` = `56-60_Females` + `56-60_Males`,
+                               `61-65` = `61-65_Females` + `61-65_Males`,
+                               `66-70` = `66-70_Females` + `66-70_Males`,
+                               Total = rowSums(pick(c(2:17))),
+                               Site = "SFH") %>% janitor::adorn_totals() 
+  #compared with the Age table, the Age group by Females are 300 more in the 40-45 in this stratified table
+  tb_SH1$Race.Ethnicity <- gsub("More than one race","Multi-racial", tb_SH1$Race.Ethnicity)
+  
+##for the Sheet2, compare the different between Sex in Sheet Age and summary of Sex in Sheet AgebySex 
+#the percentage of the sheet Age by site
+  Age_SFH1 <- Age_SFH %>% 
+    mutate(`56-60`= ifelse(new_group %in% c("Female","Male"), c(tb_SH1$`56-60_Females`[tb_SH1$Race.Ethnicity=="Total"], tb_SH1$`56-60_Males`[tb_SH1$Race.Ethnicity=="Total"]), `56-60`))                                
+  #across(all_of(Age), ~ col_pct(.x)))
+  
+  age.list[[1]] <- Age_SFH1 %>% mutate(Total=rowSums(pick(contains(Age))),
+                                       across(all_of(Age), ~ col_pct(.x))) %>% 
+    select(newcol, new_group,contains(Age),Total,site)
+  
+  #to compare the numbers in "Sex", "Race" in SH from sheet1 and sheet2, the numbers in "56-60" by sex are different from Sheet1 and summarized data from Shee2, I am going to use the numbers in Sheet 2 as the final data
+  
+  tb_SH2 <- filter(tb_SH1,Race.Ethnicity != "Total") %>% mutate(across(where(is.numeric), ~ col_pct2(.x)))
+  tb_SH.total <-   tb_SH1[which(tb_SH1$Race.Ethnicity=="Total"),] %>% format(.,big.mark=",")
+  tb_SH2 <- rbind(tb_SH2, tb_SH.total)    
+  tb_SH2 <- tb_SH2 %>% as_tibble%>% select(Race.Ethnicity, contains(c("Females","Males",Age)),Total,Site) 
+  
+  sh2.56_agesex <- tb_SH1
+  Age_sex.list[[1]] <- tb_SH2
+  
+ ##**MF
+ ##*sheet1 by Age
+  #Age_MF_pct <- as_tibble(Age_MF) %>% mutate(across(all_of(Age), ~ col_pct(.x)))
+  ## sheet2 by Age*Sex, no any changes
+  
+ 
+##HFH since the big difference between sheet Age and Sheet Age and Sex, more numbers in the Sheet age * sex, I would like to update the sex part in the Age sheet of HFH and recalculate
+
+###the difference on Age by sex and race are different in HFH sheet by age and sheet by age and sex, which needs Mia's helpful instructions                                         
+tb_HFH <- df2.list[[2]] %>% filter(.,!is.na(`Catchment Population for Henry Ford Health`)) 
+tb_HFH1 <- tb_HFH[-c(1:3),]
+names(tb_HFH1)[1:9] <- c("Race.Ethnicity", paste0(tb_HFH[2,c(2:9)],"_Females"))
+names(tb_HFH1)[10:17] <- paste0(tb_HFH[2,c(10:17)],"_Males")
+
+cnames <- names(tb_HFH1)
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(tb_HFH1,varname)
+  tb_HFH1[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+tb_HFH1 <- tb_HFH1 %>% mutate(Females.Total = rowSums(pick(c(2:9))),
+                               Males.Total = rowSums(pick(c(10:17))),
+                               `30-34`= `30-34_Females` + `30-34_Males`,
+                               `35-39` = `35-39_Females` + `35-39_Males`,
+                               `40-45` = `40-45_Females` + `40-45_Males`,
+                               `46-50` = `46-50_Females` + `46-50_Males`,
+                               `51-55` = `51-55_Females` + `51-55_Males`,
+                               `56-60` = `56-60_Females` + `56-60_Males`,
+                               `61-65` = `61-65_Females` + `61-65_Males`,
+                               `66-70` = `66-70_Females` + `66-70_Males`,
+                               Total = rowSums(pick(c(2:17))),
+                              Site = gsub("Catchment Population for ","",colnames(tb_HFH)[1] )) %>% adorn_totals()
+#the number of each age group by Sex is not matched well with the one in the each sex table in Age Sheet.
+tb_HFH1$Race.Ethnicity <- gsub("More than one race","Multi-racial", tb_HFH1$Race.Ethnicity)
+
+  sex_age_HFH1 <-as.data.frame(matrix(unlist(tb_HFH1[which(tb_HFH1$Race.Ethnicity=="Total"),c(2:17)]), nrow=2, ncol=8,byrow=TRUE))
+  names(sex_age_HFH1) <- Age
+  sex_age_HFH1$newcol <- "Sex"
+  sex_age_HFH1$new_group <- c("Female","Male")
+  sex_age_HFH1$site <- "Henry Ford Health"
+  
+  sex.other.updaed <- Age_HFH$`30-34`[which(Age_HFH$new_group=="Overall")] - sum(sex_age_HFH1$`30-34`)
+  
+  Age_HFH1 <- as_tibble(bind_rows(Age_HFH[which(Age_HFH$new_group %nin% c("Female","Male")),], sex_age_HFH1)) %>% mutate(`30-34`= ifelse(newcol=="Sex" & new_group=="Sex.Other",sex.other.updaed,`30-34`),
+                                                                                                                         Total=rowSums(pick(contains(Age))))                      
+  
+  
+   Age_HFH_pct <- as_tibble(Age_HFH1)  %>% mutate(across(all_of(Age), ~ col_pct(.x))) %>% 
+    select(newcol, new_group,contains(Age),Total,site)
+   
+  age.list[[2]] <- Age_HFH_pct
+##Kp sites
+  #since some missing counts in each block (sex, race, urbanicity,insurance, and ses), I would like use this avearage mean to do the imputation for those missing. Also due to very few missing in the race, and sex group, this way might be more accurate
+      impute.miss <- function(x){
+       ifelse(is.na(x) | x==0, (2*max(x,na.rm=TRUE)-sum(x,na.rm=TRUE))/sum(is.na(x)),x)
+  } 
+ 
+  
+for (i in 4:7){
+
+  tb <- readxl::read_xlsx(paste(inputpath,tb_xlsx[i],sep=""),sheet=1)
+  empty_columns <- colSums(is.na(tb) | tb == "") == nrow(tb)
+  tb <- tb[,!empty_columns]
+  col.n <- ncol(tb)
+  
+  tmp <- tb[c(7:max(rownames(tb)[rowSums(is.na(tb))==9])-1),] 
+  
+  names(tmp)[1] <- "Factor"
+  names(tmp)[2:col.n] <- Age
+  
+  # tmp <- filter(tb, rowSums(is.na(tb[,2:col.n])) < as.numeric(col.n)-1) 
+  
+  # names(tmp)[1] <- "Factor"
+  tmp <- tmp %>% mutate(across(contains(Age),~ gsub("<6",NA,.x)))
+  #tmp[] <- lapply(tmp, gsub, pattern='n/a|-', replacement=NA)
+  
+  cnames <- names(tmp)
+  #  to check variables in recr_noinact_wl1
+  for (j in 1: length(cnames)){
+    varname <- cnames[j]
+    var<-pull(tmp,varname)
+    tmp[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+  }
+  
+  row_vec <- c(as.numeric(row.names(tmp)[which(grepl("Overall|Sex|Race|Insurance|Urbanicity|Socioeconomic Status",tmp$Factor))]), 1+nrow(tmp))
+
+  times <- diff(row_vec)
+  groups <- c("Overall","Sex","Race","Insurance","Urbanicity","SES")
+  
+  newcol <- NULL
+  for (m in 1:length(groups)){
+    
+    vet <- rep(groups[m],each=times[m])
+    newcol <- c(newcol,vet)
+  }
+  
+  tmp <- cbind(tmp,newcol)
+  
+  # Military <- filter(tmp, grepl("VA|Tricare",Factor)) %>% janitor::adorn_totals()
+  #   mutate(Insurance.Military=across(contains("-"), ~ sum(.x,na.rm=TRUE))
+  tmp.total <- tmp%>% group_by(newcol) %>% mutate(across(contains(Age),~sum(.x,na.rm=TRUE))) 
+  tmp <- tmp %>% mutate(`30-34`=ifelse(newcol=="Overall", max(tmp.total$`30-34`), `30-34`),
+                          `35-39`=ifelse(newcol=="Overall", max(tmp.total$`35-39`), `35-39`),
+                          `40-45`=ifelse(newcol=="Overall", max(tmp.total$`40-45`), `40-45`),
+                          `46-50`=ifelse(newcol=="Overall", max(tmp.total$`46-50`), `46-50`),
+                          `51-55`=ifelse(newcol=="Overall", max(tmp.total$`51-55`), `51-55`),
+                          `56-60`=ifelse(newcol=="Overall", max(tmp.total$`56-60`), `56-60`),
+                          `61-65`=ifelse(newcol=="Overall", max(tmp.total$`61-65`), `61-65`),
+                          `66-70`=ifelse(newcol=="Overall", max(tmp.total$`66-70`), `66-70`))
+  
+
+   
+  impute.miss <- function(x){
+       ifelse(is.na(x), (2*max(x,na.rm=TRUE)-sum(x,na.rm=TRUE))/sum(is.na(x)),x)
+  }
+  
+  
+  sex <- filter(tmp,newcol %in% c("Overall","Sex") & Factor %in% c("Overall","Females","Males","Unknown" )) %>% mutate(across(where(is.numeric),~impute.miss(.x)))
+  race <- filter(tmp,newcol %in% c("Overall","Race") & !grepl("Race",Factor) ) %>% mutate(across(where(is.numeric),~impute.miss(.x)))
+  insurance <- filter(tmp,newcol%in%c("Overall","Insurance") & Factor!="Insurance" ) %>% mutate(across(where(is.numeric),~impute.miss(.x)))  
+  urban <- filter(tmp,newcol%in%c("Overall","Urbanicity") & !grepl("Urbanicity",Factor )) %>% mutate(across(where(is.numeric),~impute.miss(.x)))  
+  ses <- filter(tmp,newcol %in% c("Overall","SES") & !grepl("Socioeconomic",Factor)) %>% mutate(across(where(is.numeric),~impute.miss(.x)))
+  
+  # Military <- filter(tmp, grepl("VA|Tricare",Factor)) %>% janitor::adorn_totals()
+  #   mutate(Insurance.Military=across(contains("-"), ~ sum(.x,na.rm=TRUE))
+
+  tmp1 <- bind_rows(sex,race[-1,], insurance[-1,],urban[-1,],ses[-1,]) %>% 
+    mutate(new_group= case_when(newcol=="Overall" & Factor=="Overall" ~ "Overall",
+                                newcol=="Sex" & grepl("Female",Factor) ~ "Female",
+                                newcol=="Sex" & grepl("Male", Factor) ~ "Male",
+                                newcol=="Sex" & grepl("Other",Factor) ~"Sex.Other",
+                                newcol=="Sex" & grepl("Unknown|Missing", Factor) ~"Sex.Unknown/ Missing",
+                                newcol=="Race" & grepl("White",Factor) ~ "White",
+                                newcol=="Race" & grepl("Asian",Factor) ~ "Asian/ Middle Eastern",
+                                newcol=="Race" & grepl("Black",Factor) ~ "Black/ African-American",
+                                newcol=="Race" & grepl("Asian",Factor) ~ "Asian/ Middle Eastern",
+                                newcol=="Race" & grepl("Hawaiian",Factor) ~ "Native Hawaiian/ Other Pacific Islander",
+                                newcol=="Race" & grepl("Indian",Factor) ~ "American Indian/ Alaskan Native",
+                                newcol=="Race" & grepl("Hispanic",Factor) ~ "Hispanic/ Latinx",
+                                newcol=="Race" & grepl("Multi-racial|More",Factor) ~ "Multi-racial/ Other",
+                                newcol=="Race" & grepl("Unknown",Factor) ~ "Race.Unknown",
+                                newcol=="Insurance" & grepl("Private|Commercial",Factor) & !grepl("Medic", Factor) ~ "Private/Commercial",
+                                newcol=="Insurance" & grepl("Medicare",Factor) & !grepl("Medicaid", Factor) ~ "Medicare",  
+                                newcol=="Insurance" & grepl("Medicaid", Factor) ~ "Medicaid",
+                                newcol=="Insurance" & grepl("VA|Tricare", Factor) ~ "Military",
+                                newcol=="Insurance" & grepl("Other|Worker", Factor) ~"Other",
+                                newcol=="Insurance" & grepl("Uninsured", Factor) ~ "Uninsured",
+                                newcol=="Insurance" & grepl("Unknown", Factor) ~ "Insurance.Unknown",
+                                newcol=="Urbanicity" & Factor== "RUCA Code 1" ~ "RUCA Code 1",
+                                newcol=="Urbanicity" & grepl("Code 2", Factor) ~ "RUCA Code 2",                            
+                                newcol=="Urbanicity" & grepl("Code 3", Factor) ~ "RUCA Code 3",
+                                newcol=="Urbanicity" & grepl("Code 4", Factor) ~ "RUCA Code 4",                            
+                                newcol=="Urbanicity" & grepl("Code 5", Factor) ~ "RUCA Code 5",
+                                newcol=="Urbanicity" & grepl("Code 6", Factor) ~ "RUCA Code 6",                            
+                                newcol=="Urbanicity" & grepl("Code 7", Factor) ~ "RUCA Code 7",
+                                newcol=="Urbanicity" & grepl("Code 8", Factor) ~ "RUCA Code 8",                            
+                                newcol=="Urbanicity" & grepl("Code 9", Factor) ~ "RUCA Code 9",
+                                newcol=="Urbanicity" & Factor== "RUCA Code 10" ~ "RUCA Code 10",
+                                newcol=="Urbanicity" & grepl("Unknown", Factor) ~ "Urbanicity.Unknown", 
+                                newcol=="SES" & grepl("scores 1-25", Factor) ~ "First Quartile (ADI scores 1-25)",
+                                newcol=="SES" & grepl("scores 26-50", Factor) ~ "Second Quartile (ADI scores 26-50)",
+                                newcol=="SES" & grepl("scores 51-75", Factor) ~ "Third Quartile (ADI scores 51-75)",
+                                newcol=="SES" & grepl("scores 76-100", Factor) ~ "Fourth Quartile (ADI scores 76-100)",
+                                newcol=="SES" & grepl("Unknown",Factor) ~"SES.Unknown/ Missing"
+    ))
+  
+  tmp1 <- tmp1 %>% group_by(newcol,new_group) %>% mutate(across(contains(Age),~sum(.x,na.rm=TRUE))) 
+  tmp1 <- tmp1[!duplicated(tmp1$new_group),]
+  
+
+  site <- trimws(gsub("CONNECT - Catchment Population for ","",colnames(tb)[1])) 
+  
+  tmp2 <- as_tibble(tmp1) %>% mutate(Total=rowSums(pick(contains(Age))),
+                                     across(contains(Age), ~ col_pct(.x)),
+                                     site=site) %>% 
+    select(newcol, new_group,contains(Age),Total,site)
+  
+  colnames(tmp2)[1] <- paste(site,colnames(tmp2)[1],sep="_")
+  
+  age.list[[i]] <- tmp2
+  tmp1$site <- site
+  if(trimws(gsub("CONNECT - Catchment Population for ","",colnames(tb)[1])) == "KPGA"){Age_KPGA <- tmp1}
+  else if(trimws(gsub("CONNECT - Catchment Population for ","",colnames(tb)[1])) == "KPCO"){Age_KPCO <- tmp1}
+  else if(trimws(gsub("CONNECT - Catchment Population for ","",colnames(tb)[1])) == "KPHI"){Age_KPHI <- tmp1}
+  else if(trimws(gsub("CONNECT - Catchment Population for ","",colnames(tb)[1])) == "KPNW"){Age_KPNW <- tmp1}
+
+}
+ 
+ 
+#for HP # [3] "HP_Age_AggRpt_2023.06.09.xlsx"
+      #HP no arguement on their two sheets
+ df <- readxl::read_xlsx(paste(inputpath,tb_xlsx[3],sep=""),sheet=1)
+ empty_columns <- colSums(is.na(df) | df == "") == nrow(df)
+ df <- df[,!empty_columns]
+  col.n <- ncol(df)
+ # df$site <- gsub("Catchment Population for ","",trimws(colnames(df)[1])) 
+ tmp <- df[-c(1:4,43:46,59:62),]
+ names(tmp)[3:col.n] <- df[4,c(3:col.n)]
+ row_vec <- c(as.numeric(row.names(tmp)[which(grepl("Total|Sex|Race|Insurance|Urbanicity|Socioeconomic Status",tmp$`Catchment Population for HP`))]), 1+nrow(tmp))
+ times <- diff(row_vec)
+ 
+ groups <- c("Total","Sex","Race","Insurance","Urbanicity","SES")
+ 
+ newcol <- NULL
+ for (m in 1:length(groups)){
+   
+   vet <- rep(groups[m],each=times[m])
+   newcol <- c(newcol,vet)
+ }
+ 
+ tmp <- cbind(tmp,newcol)
+ tmp$...2 <- gsub("Ethnicity","Hispanic", tmp$...2)
+ tmp$`Catchment Population for HP`<- gsub("Race","White", tmp$`Catchment Population for HP`)
+
+ race <- c("White", "Black","Asian","Native American","Native Hawaiian","Other","Unknown")
+ tmp$`Catchment Population for HP`[c(8,9,11,12,14,15,17,18,20,21,23,24,26,27)] <- rep(c("White", "Black","Asian","Native American","Native Hawaiian","Other","Unknown"), each=2) 
+ 
+ tmp <- tmp[which(rowSums(is.na(tmp[,c(3:10)]))< 8),]
+ 
+ tmp <- tmp %>% 
+   mutate(new_group = case_when(newcol=="Urbanicity" & `Catchment Population for HP`== "Urbanicity" ~ "RUCA Code 1",
+                             newcol=="SES" & `Catchment Population for HP`== "Socioeconomic Status" ~ "First Quartile (ADI scores 1-25)",
+                             newcol=="Total" & `Catchment Population for HP`=="Total" ~ "Overall",
+                             newcol=="Sex" & `Catchment Population for HP`=="Sex" ~ "Female",
+                             newcol=="Sex" & `Catchment Population for HP`=="Male" ~ "Male",
+                             newcol=="Sex" & grepl("Other",`Catchment Population for HP`) ~"Sex.Other",
+                             newcol=="Sex" & grepl("Unknown|Missing", `Catchment Population for HP`) ~"Sex.Unknown/ Missing",
+                             newcol=="Race" & ...2 !="Hispanic" & grepl("White",`Catchment Population for HP`) ~ "White",
+                             newcol=="Race" &...2 !="Hispanic" & grepl("Asian",`Catchment Population for HP`) ~ "Asian/ Middle Eastern",
+                             newcol=="Race" &...2 !="Hispanic" & grepl("Black",`Catchment Population for HP`) ~ "Black/ African-American",
+                             newcol=="Race" &...2 =="Hispanic" & newcol=="Race" ~ "Hispanic/ Latinx",
+                             newcol=="Race" &...2 !="Hispanic" & grepl("Hawaiian",`Catchment Population for HP`) ~ "Native Hawaiian/ Other Pacific Islander",
+                             newcol=="Race" &...2 !="Hispanic" & grepl("Indian|Native American",`Catchment Population for HP`) ~ "American Indian/ Alaskan Native",
+                             newcol=="Race" &...2 !="Hispanic" & grepl("Multi-racial|More|Other",`Catchment Population for HP`) ~ "Multi-racial/ Other",
+                             newcol=="Race" &...2 !="Hispanic" & grepl("Unknown",`Catchment Population for HP`) ~ "Race.Unknown",
+                             newcol=="Insurance" & grepl("Employment|Direct",`Catchment Population for HP`) & !grepl("Medic", `Catchment Population for HP`) ~ "Private/Commercial",
+                             newcol=="Insurance" & grepl("Medicare",`Catchment Population for HP`) & !grepl("Medicaid", `Catchment Population for HP`) ~ "Medicare",  
+                             newcol=="Insurance" & grepl("Medicaid", `Catchment Population for HP`) ~ "Medicaid",
+                             newcol=="Insurance" & grepl("VA|Tricare", `Catchment Population for HP`) ~ "Military",
+                             newcol=="Insurance" & grepl("Uninsured", `Catchment Population for HP`) ~ "Uninsured",
+                             newcol=="Insurance" & grepl("Other|Worker", `Catchment Population for HP`) ~"Other",
+                             newcol=="Insurance" & grepl("Unknown", `Catchment Population for HP`) ~ "Insurance.Unknown",
+                             newcol=="Urbanicity" & grepl("CODE 2", `Catchment Population for HP`) ~ "RUCA Code 2",                            
+                             newcol=="Urbanicity" & grepl("CODE 3", `Catchment Population for HP`) ~ "RUCA Code 3",
+                             newcol=="Urbanicity" & grepl("CODE 4", `Catchment Population for HP`) ~ "RUCA Code 4",                            
+                                newcol=="Urbanicity" & grepl("CODE 5", `Catchment Population for HP`) ~ "RUCA Code 5",
+                                newcol=="Urbanicity" & grepl("CODE 6", `Catchment Population for HP`) ~ "RUCA Code 6",                            
+                                newcol=="Urbanicity" & grepl("CODE 7", `Catchment Population for HP`) ~ "RUCA Code 7",
+                                newcol=="Urbanicity" & grepl("CODE 8", `Catchment Population for HP`) ~ "RUCA Code 8",                            
+                                newcol=="Urbanicity" & grepl("CODE 9", `Catchment Population for HP`) ~ "RUCA Code 9",
+                                newcol=="Urbanicity" & `Catchment Population for HP`=="RUCA CODE 10" ~ "RUCA Code 10",
+                                newcol=="Urbanicity" & grepl("Unknown|Missing", `Catchment Population for HP`) ~ "Urbanicity.Unknown", 
+                                newcol=="SES" & grepl("scores 1-25", `Catchment Population for HP`) ~ "First Quartile (ADI scores 1-25)",
+                                newcol=="SES" & grepl("scores 26-50", `Catchment Population for HP`) ~ "Second Quartile (ADI scores 26-50)",
+                                newcol=="SES" & grepl("scores 51-75", `Catchment Population for HP`) ~ "Third Quartile (ADI scores 51-75)",
+                                newcol=="SES" & grepl("scores 76-100", `Catchment Population for HP`) ~ "Fourth Quartile (ADI scores 76-100)",
+                                newcol=="SES" & grepl("Unknown|Missing",`Catchment Population for HP`) ~"SES.Unknown/ Missing"
+    )) %>% as_tibble()
+ 
+ cnames <- names(tmp)
+ #  to check variables in recr_noinact_wl1
+ for (j in 1: length(cnames)){
+   varname <- cnames[j]
+   var<-pull(tmp,varname)
+   tmp[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+ }
+ tmp1 <- tmp %>%  dplyr::group_by(newcol,new_group) %>% mutate(across(contains(Age),~ sum(.x,na.rm=TRUE))) 
+ tmp1 <- tmp1[!duplicated(tmp1$new_group),]
+ 
+ site <- trimws(gsub("Catchment Population for ","",colnames(df)[1])) 
+ 
+ # tmp2 <- as_tibble(tmp1) %>% mutate(across(contains(Age), ~ col_pct(.x)),)
+ # colnames(tmp2)[1] <- paste(site,colnames(tmp2)[1],sep="_")
+ 
+ Age_HP <- tmp1 %>% mutate(site = site)
+ Age_HP$newcol <- gsub("Total","Overall",Age_HP$newcol)
+ Age_HP_pct<- Age_HP %>% select(newcol,new_group,contains(Age),site) %>% 
+                                      mutate(Total=rowSums(pick(contains(Age))),
+                                            across(contains(Age), ~ col_pct(.x)))
+age.list[[3]] <- Age_HP_pct
+
+ ##UChicago
+ df <- readxl::read_xlsx(paste(inputpath,tb_xlsx[9],sep=""),sheet=1)
+ empty_columns <- colSums(is.na(df) | df == "") == nrow(df)
+ df <- df[,!empty_columns]
+ col.n <- ncol(df)
+ 
+ tmp <- df[-c(1:3),]
+ names(tmp) <- df[3,]
+ tmp <- tmp %>% mutate(across(contains(Age),~ gsub("n/a|-","",.x)))
+ #tmp[] <- lapply(tmp, gsub, pattern='n/a|-', replacement=NA)
+ 
+ cnames <- names(tmp)
+ #  to check variables in recr_noinact_wl1
+ for (j in 1: length(cnames)){
+   varname <- cnames[j]
+   var<-pull(tmp,varname)
+   tmp[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+ }
+ 
+ site <- trimws(gsub("Catchment Population for ","",colnames(df)[1])) 
+ #colnames(tmp1)[1] <- paste(site,colnames(tmp1)[1],sep="_")
+ #site<- unique(ifelse(grepl("3",tmp1$site) ==TRUE, "HP", unique(tmp$site)))
+ #write.csv(tmp1,paste(outputpath,"Aggregate_Table_",site,CurrentDate,".csv",sep=""), row.names = F,na="")
+ 
+ row_vec <- c(as.numeric(row.names(tmp)[which(grepl("Overall|Sex|Race|Insurance|Urbanicity|Socioeconomic Status",tmp$Factor))]), 1+nrow(tmp))
+ 
+ times <- diff(row_vec)
+ groups <- c("Overall","Sex","Race","Insurance","Urbanicity","SES")
+ 
+ newcol <- NULL
+ for (m in 1:length(groups)){
+   
+   vet <- rep(groups[m],each=times[m])
+   newcol <- c(newcol,vet)
+ }
+ 
+ tmp <- cbind(tmp,newcol)
+
+ tmp1 <- filter(tmp , rowSums(is.na(tmp[,Age])) < 8) %>% 
+   mutate(new_group= case_when(newcol=="Overall" & Factor=="Overall" ~ "Overall",
+                               newcol=="Sex" & Factor == "Female" ~ "Female",
+                               newcol=="Sex" & Factor == "Male" ~ "Male",
+                               newcol=="Sex" & grepl("Other",Factor) ~"Sex.Other",
+                               newcol=="Sex" & grepl("Unknown|Missing", Factor) ~"Sex.Unknown/ Missing",
+                               newcol=="Race" & grepl("White",Factor) ~ "White",
+                               newcol=="Race" & grepl("Asian",Factor) ~ "Asian/ Middle Eastern",
+                               newcol=="Race" & grepl("Black",Factor) ~ "Black/ African-American",
+                               newcol=="Race" & grepl("Hawaiian",Factor) ~ "Native Hawaiian/ Other Pacific Islander",
+                               newcol=="Race" & grepl("Indian",Factor) ~ "American Indian/ Alaskan Native",
+                               newcol=="Race" & grepl("Hispanic",Factor) ~ "Hispanic/ Latinx",
+                               newcol=="Race" & grepl("Multi-racial|More",Factor) ~ "Multi-racial/ Other",
+                               newcol=="Race" & grepl("Unknown",Factor) ~ "Race.Unknown",
+                               newcol=="Insurance" & grepl("Private|Commerical",Factor) & !grepl("Medic", Factor) ~ "Private/Commercial",
+                               newcol=="Insurance" & grepl("Medicare",Factor) & !grepl("Medicaid", Factor) ~ "Medicare",  
+                               newcol=="Insurance" & grepl("Medicaid", Factor) ~ "Medicaid",
+                               newcol=="Insurance" & grepl("VA|Tricare", Factor) ~ "Military",
+                               newcol=="Insurance" & grepl("Other|Worker", Factor) ~"Other",
+                               newcol=="Insurance" & grepl("Uninsured", Factor) ~ "Uninsured",
+                               newcol=="Insurance" & grepl("Unknown", Factor) ~ "Insurance.Unknown",
+                               newcol=="Urbanicity" & Factor == "RUCA Code 1" ~ "RUCA Code 1",
+                               newcol=="Urbanicity" & grepl("Code 2", Factor) ~ "RUCA Code 2",                            
+                               newcol=="Urbanicity" & grepl("Code 3", Factor) ~ "RUCA Code 3",
+                               newcol=="Urbanicity" & grepl("Code 4", Factor) ~ "RUCA Code 4",                            
+                               newcol=="Urbanicity" & grepl("Code 5", Factor) ~ "RUCA Code 5",
+                               newcol=="Urbanicity" & grepl("Code 6", Factor) ~ "RUCA Code 6",                            
+                               newcol=="Urbanicity" & grepl("Code 7", Factor) ~ "RUCA Code 7",
+                               newcol=="Urbanicity" & grepl("Code 8", Factor) ~ "RUCA Code 8",                            
+                               newcol=="Urbanicity" & grepl("Code 9", Factor) ~ "RUCA Code 9",
+                               newcol=="Urbanicity" & grepl("Code 10",Factor)  ~ "RUCA Code 10",
+                               newcol=="Urbanicity" & grepl("Unknown", Factor) ~ "Urbanicity.Unknown", 
+                               newcol=="SES" & grepl("scores 1-25", Factor) ~ "First Quartile (ADI scores 1-25)",
+                               newcol=="SES" & grepl("scores 26-50", Factor) ~ "Second Quartile (ADI scores 26-50)",
+                               newcol=="SES" & grepl("scores 51-75", Factor) ~ "Third Quartile (ADI scores 51-75)",
+                               newcol=="SES" & grepl("scores 76-100", Factor) ~ "Fourth Quartile (ADI scores 76-100)",
+                               newcol=="SES" & grepl("Unknown",Factor) ~"SES.Unknown/ Missing"
+   ))
+ 
+ total <-filter(tmp1, newcol == "Insurance") %>% group_by(newcol) %>% 
+   janitor::adorn_totals()
+ total$newcol <- gsub("-","Overall", total$newcol)
+ total$new_group <- gsub("-","Overall", total$new_group)
+ # mutate(across(contains(Age),~sum(.x,na.rm=TRUE)))
+  
+ tmp1 <- rbind(tmp1,total[which(total$Factor=="Total"),])
+ 
+ tmp1 <- tmp1 %>% group_by(newcol,new_group) %>% mutate(across(contains(Age),~sum(.x,na.rm=TRUE))) 
+ tmp1 <- tmp1[!duplicated(tmp1$new_group),]
+ 
+ site <- trimws(gsub("Catchment Population for ","",colnames(df)[1])) 
+ 
+ Age_UCh <- tmp1 %>% mutate(site = site)
+ 
+  ##compared between two sheets of Age and AgeBysSex, the UChicago had very different numbers on their site: the total number in AgebySex are much more than the ones shown in the Sheet Age. After asking Mia's advise to use the maximum number among these sheets. I will use the number shown in AgeBySex in place of the Sex, Race in the Sheet Age, the difference would be counted as missing.
+ 
+ tb <- readxl::read_xlsx(paste(inputpath,"UChicago Catchment Population Request May 2023.xlsx",sep=""),sheet=2)
+tb_ChC <- tb[-c(1:5),]
+
+names(tb_ChC)[1:9] <- c("Race.Ethnicity",paste0(tb[4,c(2:9)],"_Females"))
+names(tb_ChC)[10:17] <- paste0(tb[4,c(10:17)],"_Males")
+
+cnames <- names(tb_ChC)
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(tb_ChC,varname)
+  tb_ChC[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+tb_ChC <- tb_ChC %>% mutate(Females.Total = rowSums(pick(c(2:9))),
+                            Males.Total = rowSums(pick(c(10:17))),
+                            Total = rowSums(pick(c(2:17))),
+                            `30-34`= `30-34_Females` + `30-34_Males`,
+                            `35-39` = `35-39_Females` + `35-39_Males`,
+                            `40-45` = `40-45_Females` + `40-45_Males`,
+                             `46-50` = `46-50_Females` + `46-50_Males`,
+                             `51-55` = `51-55_Females` + `51-55_Males`,
+                             `56-60` = `56-60_Females` + `56-60_Males`,
+                             `61-65` = `61-65_Females` + `61-65_Males`,
+                             `66-70` = `66-70_Females` + `66-70_Males`,                            
+                              Site = gsub("Catchment Population for ","",colnames(tb)[1] )) %>% adorn_totals()
+#all the numbers by Age and Sex are not matched with the ones shown in the Age tables by Sex
+tb_ChC$Race.Ethnicity <- gsub("More than one race","Multi-racial", tb_ChC$Race.Ethnicity)
+
+Sex_race.UChc <- tb_ChC%>% select(Race.Ethnicity, all_of(Age)) %>% dplyr::rename(new_group=Race.Ethnicity) %>% mutate(newcol="Race") 
+Sex_race.UChc$new_group <- gsub("Unknown","Race.Unknown", Sex_race.UChc$new_group)
+
+
+Uchc.race <- bind_rows(Sex_race.UChc[which(Sex_race.UChc$new_group !="Total"),],Age_UCh[which(Age_UCh$newcol=="Race"),c("newcol","new_group",Age)]) %>% as_tibble() 
+
+Uchc.race <- Uchc.race %>%
+  group_by(new_group) %>% mutate(across(contains(Age),~max(.x,na.rm=TRUE)))%>% distinct(new_group, .keep_all = TRUE) %>% adorn_totals()
+
+Uchc.race$newcol <- ifelse(Uchc.race$new_group=="Total", "Overall","Race")
+Uchc.race$new_group <- gsub("Total","Overall", Uchc.race$new_group)
+Uchc.race$site <- "UChicago"
+
+Uchc.sex <-   as.data.frame(matrix(unlist(tb_ChC[which(tb_ChC$Race.Ethnicity=="Total"),c(2:17)]),nrow=2,ncol=8,byrow=TRUE))
+names(Uchc.sex) <- Age
+Uchc.sex$site <- "UChicago"
+Uchc.sex$newcol <- "Sex"
+Uchc.sex$new_group <- c("Female","Male")
+
+
+Age_UCh1 <- bind_rows(Uchc.race,Uchc.sex,Age_UCh[which(Age_UCh$newcol %nin% c("Race","Overall") & Age_UCh$new_group %nin% c("Female","Male")),]) 
+
+Age_UCh_pct <- as_tibble(Age_UCh1) %>% 
+  mutate(Total=rowSums(pick(contains(Age))),
+         across(contains(Age), ~ col_pct(.x))) %>% 
+         select(newcol, new_group,contains(Age),Total,site)
+# colnames(tmp2)[1] <- paste(site,colnames(tmp2)[1],sep="_")
+ 
+ age.list[[9]] <- Age_UCh_pct
+ 
+ Age_UCH1 <- as_tibble(tmp2) %>% mutate(site = site) %>% 
+    select(newcol, new_group,contains(Age),Total,site) #updated with the UChicago' July's data from Mia Aug.08, 2023
+ 
+ Age_all <- bind_rows(Age_HFH1[,-1], Age_HP[,-c(1,2)], Age_MF[,-1],Age_SFH[,-1],Age_UCh1[,colnames(Age_UCh1) != "Factor"],Age_KPCO[,-1],Age_KPGA[,-1], Age_KPHI[,-1],Age_KPNW[,-1])
+ 
+ Age_all_N <- as_tibble(Age_all) %>% select(all_of(contains(Age)),new_group, newcol) %>% 
+   mutate(Total=rowSums(pick(all_of(Age)))) %>% group_by(newcol,new_group) %>% mutate(across(where(is.numeric),~sum(.x,na.rm=TRUE)))
+
+ ##to update the overall Age_all_N with the udpated Chicago data in Aug. 08, 2023
+ 
+ #since some values are imputed with the average of counts for the missing, I would like to do rounding for the numbers to present the counts of persons by sites and overall in the tables
+ col_pct3 <- function(x) { 
+  ifelse(!is.na(x), paste0(format(round(x,0),big.mark=","), " ( ",round(100*x/max(x,na.rm=TRUE),2), "%)"), " ") }
+ Age_all_N <- Age_all_N[!duplicated(Age_all_N$new_group),] %>% as_tibble() %>% 
+   mutate(across(contains(Age), ~ col_pct3(.x)),
+          Total = col_pct3(Total))
+ 
+ Age_all_N$new_group <- factor(Age_all_N$new_group, levels=c("Overall", "Female","Male","Sex.Other","Sex.Unknown/ Missing", "White", "Black/ African-American", "Hispanic/ Latinx", "Asian/ Middle Eastern","American Indian/ Alaskan Native", "Native Hawaiian/ Other Pacific Islander", "Multi-racial/ Other", "Race.Unknown", "Private/Commercial", "Medicaid", "Medicare", "Military", "Other","Uninsured","Insurance.Unknown","RUCA Code 1","RUCA Code 2", "RUCA Code 3","RUCA Code 4","RUCA Code 5","RUCA Code 6","RUCA Code 7", "RUCA Code 8","RUCA Code 9","RUCA Code 10", "Urbanicity.Unknown", "First Quartile (ADI scores 1-25)", "Second Quartile (ADI scores 26-50)", "Third Quartile (ADI scores 51-75)",  "Fourth Quartile (ADI scores 76-100)", "SES.Unknown/ Missing"))
+
+ Age_all_N<- Age_all_N[order(Age_all_N$new_group),] 
+ Age_all_N$new_group <- gsub("Sex.|Race.|Urbanicity.|SES.","",Age_all_N$new_group)
+
+ Age.list <- list(as.data.frame(Age_HFH1[,-1]), as.data.frame(Age_HP[,-c(1,2)]), as.data.frame(Age_MF[,-1]),as.data.frame(Age_SFH[,-1]),as.data.frame(Age_UCh1[,colnames(Age_UCh1) != "Factor"]),as.data.frame(Age_KPCO[,-1]),as.data.frame(Age_KPGA[,-1]), as.data.frame(Age_KPHI[,-1]),as.data.frame(Age_KPNW[,-1]))
+ 
+ Age_pct.list <- list()
+ for (i in 1:9){
+   data <- Age.list[[i]]
+   data.pct <- as.tibble(data) %>% select(newcol, new_group,all_of(contains(Age))) %>% adorn_totals("col") %>% 
+   mutate(across(contains(Age), ~ col_pct3(.x)),
+          Total = col_pct3(Total))
+   
+  data.pct$new_group <- factor(data.pct$new_group, levels=c("Overall", "Female","Male","Sex.Other","Sex.Unknown/ Missing", "White", "Black/ African-American", "Hispanic/ Latinx", "Asian/ Middle Eastern","American Indian/ Alaskan Native", "Native Hawaiian/ Other Pacific Islander", "Multi-racial/ Other", "Race.Unknown", "Private/Commercial", "Medicaid", "Medicare", "Military", "Other","Uninsured","Insurance.Unknown","RUCA Code 1","RUCA Code 2", "RUCA Code 3","RUCA Code 4","RUCA Code 5","RUCA Code 6","RUCA Code 7", "RUCA Code 8","RUCA Code 9","RUCA Code 10", "Urbanicity.Unknown", "First Quartile (ADI scores 1-25)", "Second Quartile (ADI scores 26-50)", "Third Quartile (ADI scores 51-75)",  "Fourth Quartile (ADI scores 76-100)", "SES.Unknown/ Missing"))
+
+ data.pct<- data.pct[order(data.pct$new_group),] 
+ data.pct$new_group<- droplevels(data.pct$new_group)
+ data.pct$new_group <- gsub("Sex.|Race.|Urbanicity.|SES.","",data.pct$new_group) 
+ Age_pct.list[[i]] <- data.pct
+ Site<-unique(data$site)
+ #write.csv(data.pct,paste(outputpath,"Aggregate_Table_All_ByAge_",Site,CurrentDate,".csv",sep=""), row.names = F,na="") 
+
+ }
+write.csv(Age_all_N,paste(outputpath,"Aggregate_Table_All_ByAge_",CurrentDate,".csv",sep=""), row.names = F,na="") 
+```
+
+
+
+
+```{r, include=FALSE,eval=TRUE,echo=FALSE}
+###to integrate the summary data of Sheet 2 of all sites
+##the updated data of the nonKP sites are done above: HFH, SH1, ChC, 
+###here are the kp sites
+  # colnames(tmp2)[1] <- paste(site, colnames(tmp2)[1],sep="_")
+  # age.list[[i]] <- tmp2
+
+
+  ##to create a summary table by age and sex in comparison with the ones in Age tables ("Overall", "Sex") groups
+  
+#   total <- as.vector(tb_SH1[which(tb_SH1$Race.Ethnicity=="Total"),c(1:17,20:27)])
+#   Age_Sex_all$Factor <-"Overall"
+#   Age_Sex_all <- matrix(unlist(total)[2:25],nrow=3,ncol=8,byrow=TRUE)
+#   Age_Sex_all <- as.data.frame(Age_Sex_all) 
+#   names(Age_Sex_all) <- Age
+# Age_Sex_all$Site <- "SFH"
+# Age_Sex_all$Factor= c("Females","Males","Overall")
+# Sex.Age.SFH <- filter(Age_SFH,newcol %in% c("Overall","Sex"))
+#   Age_Sex_all <- filter(tb_SH1,Race.Ethnicity=="Total") %>% select(all_of(contains(Age))) %>% 
+#     mutate(Sex =Females=pick(ends_with("Females")),
+#            Males = pick(ends_with("Males")),
+#            Overall = vars(matches(Age)))
+                        
+  
+#write.csv(tb_SH1,paste(outputpath,"Aggregate_Table_SH_Age_Sex_Race_",CurrentDate,".csv",sep=""), row.names = F,na="")
+
+ tb_HFH2 <- filter(tb_HFH1,Race.Ethnicity!="Total") %>% mutate(across(where(is.numeric), ~ col_pct2(.x)))
+ tb_HFH.total <- tb_HFH1[which(tb_HFH1$Race.Ethnicity=="Total"),] %>% format(., big.mark=",")
+
+ tb_HFH2 <- rbind(tb_HFH2, tb_HFH.total) 
+ tb_HFH2 <-tb_HFH2 %>% as_tibble() %>% select( Race.Ethnicity, contains(c("Females","Males",Age)),Total,Site)  
+ 
+ Age_sex.list[[2]] <- tb_HFH2
+ 
+#Site <-  gsub("Catchment Population for ","",colnames(tb_HFH1)[1] ) 
+#write.csv(tb_HFH1,paste(outputpath,"Aggregate_Table_Age_Sex_Race_",Site,CurrentDate,".csv",sep=""), row.names = F,na="")
+
+###the MF had consistent numbers by Age, Age and Sex, the numbers of Age and Sex are only on the participants without missing Sex
+tb <- readxl::read_xlsx(paste(inputpath,"marshfield_catchment_population_request_may 2023.xlsx",sep=""),sheet=2)
+tb_MF <- tb[-c(1:5),]
+
+names(tb_MF)[1:9] <- c("Race.Ethnicity",paste0(tb[4,c(2:9)],"_Females"))
+names(tb_MF)[10:17] <- paste0(tb[4,c(10:17)],"_Males")
+
+cnames <- names(tb_MF)
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(tb_MF,varname)
+  tb_MF[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+tb_MF <- tb_MF %>% mutate(Females.Total = rowSums(pick(c(2:9))),
+                          Males.Total = rowSums(pick(c(10:17))),
+                          `30-34`= `30-34_Females` + `30-34_Males`,
+                          `35-39` = `35-39_Females` + `35-39_Males`,
+                          `40-45` = `40-45_Females` + `40-45_Males`,
+                          `46-50` = `46-50_Females` + `46-50_Males`,
+                          `51-55` = `51-55_Females` + `51-55_Males`,
+                          `56-60` = `56-60_Females` + `56-60_Males`,
+                          `61-65` = `61-65_Females` + `61-65_Males`,
+                          `66-70` = `66-70_Females` + `66-70_Males`,
+                           Total = rowSums(pick(c(2:17))),
+                           Site = gsub("Catchment Population for ","",colnames(tb)[1] )) %>% adorn_totals()
+tb_MF$Race.Ethnicity <- gsub("More than one race","Multi-racial", tb_MF$Race.Ethnicity)
+
+tb_MF1 <- filter(tb_MF,Race.Ethnicity!="Total") %>% mutate(across(contains(Age), ~ col_pct2(.x))) 
+Site <-  gsub("Catchment Population for ","",colnames(tb_MF)[1] ) 
+tb_MF.total <- tb_MF[which(tb_MF$Race.Ethnicity=="Total"),] %>% mutate(across(where(is.numeric),~format(.x,big.mark=","))) 
+tb_MF1 <- rbind(tb_MF1, tb_MF.total)
+tb_MF1 <- tb_MF1 %>% as_tibble %>%
+ select(Race.Ethnicity,contains(c("Females","Males",Age)),Total,Site)
+Age_sex.list[[3]] <- tb_MF1
+
+#their tables of each Age group by sex are matched well with ones in the tables by Sex of each Age in the Age sheet
+#write.csv(tb_MF,paste(outputpath,"Aggregate_Table_Age_Sex_Race_",Site,CurrentDate,".csv",sep=""), row.names = F,na="")
+
+tb_ChC$Site[which(tb_ChC$Site=="-")] <- gsub("-", "UChicago",tb_ChC$Site)
+
+tb_ChC1 <- filter(tb_ChC, Race.Ethnicity!="Total")  %>% mutate(across(where(is.numeric), ~ col_pct2(.x)))
+tb_ChC1 <- rbind(tb_ChC1, tb_ChC[which(tb_ChC$Race.Ethnicity=="Total"),])
+
+Age_sex.list[[8]] <- tb_ChC1
+# tb_ChC1 <- tb_ChC  %>% 
+#   select(Race.Ethnicity, contains(c("Female","Male","Unknown","Total")),Site) %>%   mutate(across(where(is.numeric), ~ col_pct(.x)))
+
+#Site <-  gsub("Catchment Population for ","",colnames(tb_ChC)[1] ) 
+#write.csv(tb_ChC,paste(outputpath,"Aggregate_Table_Age_Sex_Race_",Site,CurrentDate,".csv",sep=""), row.names = F,na="")
+
+
+
+tb_HP <- df2.list[[4]] 
+tb_HP1 <- as.data.frame(tb_HP[c(6,8:27),c(3:26)])
+names(tb_HP1)[1:8] <- paste0(tb_HP[5,c(3:10)],"_Females")
+names(tb_HP1)[9:16] <- paste0(tb_HP[5,c(11:18)],"_Males")
+names(tb_HP1)[17:24] <- paste0(tb_HP[5,c(19:26)],"_Unknown")
+
+Race <- c("White","Black","Asian","Native American","Native Hawaiian","Other", "Unknown")
+#Race <- Race[order(match(tb_HP$`Catchment Population for HP`[!is.na(tb_HP$`Catchment Population for HP`)][3:9]))] 
+#tb_HP1 <- tb_HP1 %>% mutate(across(contains(Age),~ gsub(".","",.x)))
+cnames <- names(tb_HP1)
+for (j in 1: length(cnames)){
+  varname <- cnames[j]
+  var<-pull(tb_HP1,varname)
+  tb_HP1[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(var), var)
+  tb_HP1[,cnames[j]] <- ifelse(as.numeric(var)>=0, as.numeric(var), NA)
+}
+        
+Ethnicity <- c("Hispanic","Non-Hispanic", "Unknown" )
+for (i in 1:length(Race)){
+  for(j in 1:3){
+    Race_Ethnicity <- paste(Race[i],Ethnicity[j],sep="_")
+      tb_HP1$Race_Ethnicity[3*(i-1)+j] <- Race_Ethnicity
+    }
+}
+
+tb_HP1 <- tb_HP1 %>% mutate(Race.Ethnicity = ifelse(sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),tail,1) =="Hispanic", "Hispanic/ Latinx", ifelse(sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),tail,1) %in% c("Non-Hispanic","Unknown") & sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),head,1) =="Other", "Multi-racial/ Other", 
+                    ifelse(sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),tail,1) %in% c("Non-Hispanic","Unknown") & sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),head,1)=="Black", "Black/ African-American",
+                           ifelse(sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),tail,1) %in% c("Non-Hispanic","Unknown") & sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),head,1)=="Asian", "Asian/ Middle Eastern",
+                                  ifelse(sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),tail,1) %in% c("Non-Hispanic","Unknown") & sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),head,1)=="Native American", "American Indian/ Alaskan Native",
+                                         ifelse(sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),tail,1) %in% c("Non-Hispanic","Unknown") & sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),head,1)=="Native Hawaiian", "Native Hawaiian/ Other Pacific Islander",sapply(strsplit(tb_HP1$Race_Ethnicity,"_"),head,1))))))))  
+
+                            
+
+
+tb_HP2 <- tb_HP1 %>% mutate(Females.Total= rowSums(pick(c(1:8))),
+                             Males.Total = rowSums(pick(c(9:16)),na.rm=TRUE),
+                             Unknown.Total =rowSums(pick(c(17:24)),na.rm=TRUE),
+                             Total =rowSums(pick(c(2:24)),na.rm=TRUE),
+                             `30-34`= `30-34_Females` + `30-34_Males` + `30-34_Unknown`,
+                            `35-39` = `35-39_Females` + `35-39_Males` + `35-39_Unknown`,
+                            `40-45` = `40-45_Females` + `40-45_Males` + `40-45_Unknown`,
+                             `46-50` = `46-50_Females` + `46-50_Males` + `46-50_Unknown`,
+                             `51-55` = `51-55_Females` + `51-55_Males` + `51-55_Unknown`,
+                             `56-60` = `56-60_Females` + `56-60_Males` + `56-60_Unknown`,
+                             `61-65` = `61-65_Females` + `61-65_Males` + `61-65_Unknown`,
+                             `66-70` = `66-70_Females` + `66-70_Males` + `66-70_Unknown` ) %>% 
+  group_by(Race.Ethnicity) %>% mutate(across(where(is.numeric),~sum(.x, na.rm=TRUE))) %>%  distinct(Race.Ethnicity, .keep_all = TRUE)
+ 
+  
+tb_HP_totle <- as.data.frame(t(apply(tb_HP2[,colnames(tb_HP2) %nin% c("Race_Ethnicity","Race.Ethnicity")],2,sum))) 
+tb_HP_totle$Race.Ethnicity <- "Total"
+  tb_HP2 <- bind_rows(tb_HP2,tb_HP_totle)
+  
+  tb_HP2_pct <- as_tibble(tb_HP2) %>% 
+    mutate(across(where(is.numeric), ~ col_pct(.x))) %>% select(Race.Ethnicity,all_of(Age), contains(c("Female","Male","Unknown","Total")))
+  
+  tb_HP2_pct$Race.Ethnicity[is.na(tb_HP2_pct$Race.Ethnicity)] <- replace_na("Total")
+  
+ tb_HP2_pct <- as_tibble(rbind(tb_HP2_pct[which(tb_HP2_pct$Race.Ethnicity!="Total"),], format(tb_HP_totle,big.mark=","))) %>% select(Race.Ethnicity,contains(c("Females","Males","Unknown",Age)),Total)
+ 
+  tb_HP2_pct$site <- gsub("Catchment Population for ","",colnames(tb_HP)[1] )
+  Age_sex.list[[4]] <- tb_HP2_pct
+
+#Site <-  gsub("Catchment Population for ","",colnames(tb_HP)[1] ) 
+#write.csv(tb_HP1,paste(outputpath,"Aggregate_Table_Age_Sex_Race_",Site,CurrentDate,".csv",sep=""), row.names = F,na="")
+
+##for KP sites
+
+age.sex.df <- list()
+for (i in 1:3){
+  
+  
+  tb <- readxl::read_xlsx(paste(inputpath,tb_xlsx[4+i],sep=""),sheet=2)
+  empty_columns <- colSums(is.na(tb) | tb == "") == nrow(tb)
+  tb <- tb[,!empty_columns]
+  
+  tb1 <- tb[-c(1:7),]
+  n <- as.numeric(ncol(tb))
+  
+  names(tb1)[2:9] <- paste0(tb[5,c(2:9)],"_Females")
+  names(tb1)[10:17] <- paste0(tb[5,c(10:17)],"_Males")
+  names(tb1)[18:n] <- paste0(tb[5,c(18:n)],"_Unknown")
+  #tb1 <- tb1 %>% mutate(across(contains(Age),~ gsub("<6",NA,.x)))
+  colnames(tb1)[1] <- "Factor"
+  
+  
+  cnames <- names(tb1)
+  for (j in 1: length(cnames)){
+    varname <- cnames[j]
+    var<-pull(tb1,varname)
+    tb1[,cnames[j]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+  }
+
+    #tb1 <- tb1 %>% mutate(across(contains(Age), ~ col_pct2(.x)))
+  pos <- unlist(gregexpr("KPCO|KPGA|KPHI|KPNW",colnames(tb)[1]))
+  Site <- trimws(substring(colnames(tb)[1],pos,pos+4)) 
+  tb1$site <- Site
+  
+age.sex.df[[i]] <- tb1
+  #write.csv(tb1,paste(outputpath,"Aggregate_Table_Age_Sex_Race_",Site,CurrentDate,".csv",sep=""), row.names = F,na="")
+}
+
+  Age_Sex_KPGA <- as_tibble(age.sex.df[[1]])
+  Age_Sex_KPGA.combin <- merge(Age_Sex_KPGA,Age_KPGA, by.x=c("Factor","site"),by.y=c("Factor","site"))
+  str(Age_Sex_KPGA.combin)
+  
+  Age_Sex_KPGA.combin$`61-65_Females` <- as.numeric(ifelse(Age_Sex_KPGA.combin$`61-65_Females` == "<6" , Age_KPGA$`61-65`[which(Age_KPGA$new_group=="Female")] - sum(as.numeric(Age_Sex_KPGA.combin$`61-65_Females`), na.rm=TRUE), as.numeric(Age_Sex_KPGA.combin$`61-65_Females`)))
+  
+  Age_Sex_KPGA.combin$`66-70_Females` <- as.numeric(ifelse(Age_Sex_KPGA.combin$`66-70_Females` == "<6" , Age_KPGA$`66-70`[which(Age_KPGA$new_group=="Female")] - sum(as.numeric(Age_Sex_KPGA.combin$`66-70_Females`), na.rm=TRUE), as.numeric(Age_Sex_KPGA.combin$`66-70_Females`)))
+  
+  Age_Sex_KPGA.combin$`40-45_Males` <- as.numeric(ifelse(Age_Sex_KPGA.combin$`40-45_Males` == "<6" , Age_KPGA$`40-45`[which(Age_KPGA$new_group=="Male")] - sum(as.numeric(Age_Sex_KPGA.combin$`40-45_Males`), na.rm=TRUE), as.numeric(Age_Sex_KPGA.combin$`40-45_Males`)))
+  
+  Age_Sex_KPGA.combin$`46-50_Males` <- as.numeric(ifelse(Age_Sex_KPGA.combin$`46-50_Males` == "<6" , Age_KPGA$`46-50`[which(Age_KPGA$new_group=="Male")] - sum(as.numeric(Age_Sex_KPGA.combin$`46-50_Males`), na.rm=TRUE), as.numeric(Age_Sex_KPGA.combin$`46-50_Males`)))
+  
+  Age_Sex_KPGA.combin$`51-55_Males` <- as.numeric(ifelse(Age_Sex_KPGA.combin$`51-55_Males` == "<6" , Age_KPGA$`51-55`[which(Age_KPGA$new_group=="Male")] - sum(as.numeric(Age_Sex_KPGA.combin$`51-55_Males`), na.rm=TRUE), as.numeric(Age_Sex_KPGA.combin$`51-55_Males`)))
+  
+  Age_Sex_KPGA.combin$`61-65_Males` <- as.numeric(ifelse(Age_Sex_KPGA.combin$`61-65_Males` == "<6" , Age_KPGA$`61-65`[which(Age_KPGA$new_group=="Male")] - sum(as.numeric(Age_Sex_KPGA.combin$`61-65_Males`), na.rm=TRUE), as.numeric(Age_Sex_KPGA.combin$`61-65_Males`)))
+  
+  Age_Sex_KPGA.combin$`66-70_Males` <- as.numeric(ifelse(Age_Sex_KPGA.combin$`66-70_Males` == "<6" , Age_KPGA$`66-70`[which(Age_KPGA$new_group=="Male")] - sum(as.numeric(Age_Sex_KPGA.combin$`66-70_Males`), na.rm=TRUE), as.numeric(Age_Sex_KPGA.combin$`66-70_Males`)))
+  
+  Age_Sex_KPGA.unknown <- Age_Sex_KPGA.combin %>% mutate(
+                                        `30-34_Unknown`=`30-34`-`30-34_Females`-`30-34_Males`,
+                                       `35-39_Unknown` = `35-39` - (`35-39_Males` + `35-39_Females`),
+                                      `40-45_Unknown` = `40-45` - (`40-45_Males` + `40-45_Females`),
+                                      `46-50_Unknown` = `46-50` - (`46-50_Males` + `46-50_Females`),
+                                      `51-55_Unknown` = `51-55` - (`51-55_Males` + `51-55_Females`),
+                                      `56-60_Unknown` = `56-60` - (`56-60_Males` + `56-60_Females`),
+                                      `61-65_Unknown` = `61-65` - (`61-65_Males` + `61-65_Females`),
+                                      `66-70_Unknown` = `66-70` - (`66-70_Males` + `66-70_Females`))
+  col_pct4 <- function(x) { 
+  ifelse(!is.na(x) & x < max(x), paste0(format(round(x,0),big.mark=","), " ( ",round(100*x/max(x,na.rm=TRUE),2), "%)"), format(x,big.mark=",")) }
+  
+    Age_Sex_KPGA.pct <- Age_Sex_KPGA.unknown %>% select(new_group,contains(c("Female","Male","Unknown",Age,"Total")),site) %>% 
+    mutate(Total=rowSums(pick(where(is.numeric))),
+           Total_Females= rowSums(pick(contains("Females"))),
+           Total_Males = rowSums(pick(contains("Males"))),
+           Total_Unknown= rowSums(pick(contains("Unknown"))))%>% adorn_totals() %>% select(new_group,contains(c("Female","Male","Unknown",Age,"Total")),site) %>% 
+    mutate(across(where(is.numeric),~col_pct4(.x)))  %>% select(new_group,contains(c("Female","Male","Unknown",Age)),Total,site)
+
+Age_sex.list[[5]] <- Age_Sex_KPGA.pct
+
+
+  Age_Sex_KPHI <- as_tibble(age.sex.df[[2]])
+  Age_Sex_KPHI.combin <- merge(Age_Sex_KPHI,Age_KPHI, by.x=c("Factor","site"),by.y=c("Factor","site"))
+  str(Age_Sex_KPHI.combin)
+
+  Age_Sex_KPHI.unknown <- Age_Sex_KPHI.combin %>% 
+    mutate(`30-34_Unknown`=`30-34`-`30-34_Females`-`30-34_Males`,
+            `35-39_Unknown` = `35-39` - (`35-39_Males` + `35-39_Females`),
+            `40-45_Unknown` = `40-45` - (`40-45_Males` + `40-45_Females`),
+            `46-50_Unknown` = `46-50` - (`46-50_Males` + `46-50_Females`),
+            `51-55_Unknown` = `51-55` - (`51-55_Males` + `51-55_Females`),
+            `56-60_Unknown` = `56-60` - (`56-60_Males` + `56-60_Females`),
+             `61-65_Unknown` = `61-65` - (`61-65_Males` + `61-65_Females`),
+             `66-70_Unknown` = `66-70` - (`66-70_Males` + `66-70_Females`))
+  Age_Sex_KPHI.pct <- Age_Sex_KPHI.unknown %>% select(new_group,contains(c("Female","Male","Unknown",Age,"Total")),site) %>% 
+    mutate(Total=rowSums(pick(where(is.numeric))),
+           Total_Females= rowSums(pick(contains("Females"))),
+           Total_Males = rowSums(pick(contains("Males"))),
+           Total_Unknown= rowSums(pick(contains("Unknown"))))%>% adorn_totals() %>% 
+    mutate(across(where(is.numeric),~col_pct4(.x))) %>% select(new_group,contains(c("Female","Male","Unknown",Age)),Total,site)
+Age_sex.list[[6]] <- Age_Sex_KPHI.pct
+
+  Age_Sex_KPNW <- as_tibble(age.sex.df[[3]])
+  Age_Sex_KPNW.combin <- merge(Age_Sex_KPNW,Age_KPNW, by.x=c("Factor","site"),by.y=c("Factor","site"))
+  
+  Age_Sex_KPNW.unknown <- Age_Sex_KPNW.combin %>% mutate(`30-34_Unknown`=`30-34`-`30-34_Females`-`30-34_Males`,
+                                       `35-39_Unknown` = `35-39` - (`35-39_Males` + `35-39_Females`),
+                                      `40-45_Unknown` = `40-45` - (`40-45_Males` + `40-45_Females`),
+                                      `46-50_Unknown` = `46-50` - (`46-50_Males` + `46-50_Females`),
+                                      `51-55_Unknown` = `51-55` - (`51-55_Males` + `51-55_Females`),
+                                      `56-60_Unknown` = `56-60` - (`56-60_Males` + `56-60_Females`),
+                                      `61-65_Unknown` = `61-65` - (`61-65_Males` + `61-65_Females`),
+                                      `66-70_Unknown` = `66-70` - (`66-70_Males` + `66-70_Females`))
+  Age_Sex_KPNW.pct <- Age_Sex_KPNW.unknown %>% select(new_group,contains(c("Female","Male","Unknown",Age,"Total")),site) %>% 
+    mutate(Total=rowSums(pick(where(is.numeric))),
+           Total_Females= rowSums(pick(contains("Females"))),
+           Total_Males = rowSums(pick(contains("Males"))),
+           Total_Unknown= rowSums(pick(contains("Unknown"))),
+           )%>% adorn_totals() %>% 
+    mutate(across(where(is.numeric),~col_pct4(.x)))  %>% select(new_group,contains(c("Female","Male","Unknown",Age)),Total,site)
+  
+Age_sex.list[[7]] <- Age_Sex_KPNW.pct
+
+tb_ChC$new_group <- ifelse(tb_ChC$Race.Ethnicity=="Unknown","Race.Unknown", tb_ChC$Race.Ethnicity)
+tb_HFH1$new_group <- ifelse(tb_HFH1$Race.Ethnicity=="Unknown","Race.Unknown", tb_HFH1$Race.Ethnicity)
+tb_MF$new_group <- ifelse(tb_MF$Race.Ethnicity=="Unknown","Race.Unknown", tb_MF$Race.Ethnicity)
+tb_HP2$new_group <- ifelse(tb_HP2$Race.Ethnicity=="Unknown","Race.Unknown", tb_HP2$Race.Ethnicity)
+tb_SH1$new_group <- ifelse(tb_SH1$Race.Ethnicity=="Unknown","Race.Unknown", tb_SH1$Race.Ethnicity)
+
+Age_Sex_all_N <- bind_rows(Age_Sex_KPGA.unknown,Age_Sex_KPHI.unknown,Age_Sex_KPNW.unknown,tb_ChC[which(tb_ChC$Race.Ethnicity!="Total"),],tb_HFH1[which(tb_HFH1$Race.Ethnicity!="Total"),],tb_MF[which(tb_MF$Race.Ethnicity!="Total"),],tb_SH1[which(tb_SH1$Race.Ethnicity!="Total"),],tb_HP2[which(tb_HP2$Race.Ethnicity!="Total"),]) 
+
+Age_Sex_all_N$Race.Ethnicity <- trimws(gsub("1. |2. |3. |4. |5. |6. |7. |8. ", "",Age_Sex_all_N$Race.Ethnicity))
+
+
+Age_Sex_all_Total <- Age_Sex_all_N  %>% replace(is.na(.),0) %>% group_by(new_group) %>% mutate(across(where(is.numeric),sum)) %>% distinct(new_group, .keep_all = TRUE) %>% 
+  mutate(`30-34`= `30-34_Females` + `30-34_Males` + `30-34_Unknown`,
+          `35-39` = `35-39_Females` + `35-39_Males` + `35-39_Unknown`,
+          `40-45` = `40-45_Females` + `40-45_Males` + `40-45_Unknown`,
+          `46-50` = `46-50_Females` + `46-50_Males` + `46-50_Unknown`,
+           `51-55` = `51-55_Females` + `51-55_Males` + `51-55_Unknown`,
+           `56-60` = `56-60_Females` + `56-60_Males` + `56-60_Unknown`,
+           `61-65` = `61-65_Females` + `61-65_Males` + `61-65_Unknown`,
+           `66-70` = `66-70_Females` + `66-70_Males` + `66-70_Unknown` ) %>% 
+  select(new_group, contains(c("Female","Male","Unknown",Age,"Total"))) %>% adorn_totals()
+
+
+
+Age_Sex_all_pct <- Age_Sex_all_Total %>% mutate(across(where(is.numeric),~col_pct4(.x)))
+names(Age_Sex_all_pct)[1] <- "Race Ethnicity"
+
+
+Age_all_N$new_group <- factor(Age_all_N$new_group, levels=c("Overall", "Female","Male","Sex.Other","Sex.Unknown/ Missing", "White", "Black/ African-American", "Hispanic/ Latinx", "Asian/ Middle Eastern","American Indian/ Alaskan Native", "Native Hawaiian/ Other Pacific Islander", "Multi-racial/ Other", "Race.Unknown", "Private/Commercial", "Medicaid", "Medicare", "Military", "Other","Uninsured","Insurance.Unknown","RUCA Code 1","RUCA Code 2", "RUCA Code 3","RUCA Code 4","RUCA Code 5","RUCA Code 6","RUCA Code 7","RUCA Code 8","RUCA Code 9","RUCA Code 10",
+"Urbanicity.Unknown", "First Quartile (ADI scores 1-25)", "Second Quartile (ADI scores 26-50)", "Third Quartile (ADI scores 51-75)",  "Fourth Quartile (ADI scores 76-100)", "SES.Unknown/ Missing"))
+
+Age_all_N <- Age_all_N[order(Age_all_N$new_group),]
+
+```
+
+#write the tables
+##the Tables stratified by Age of all sites
+```{r,echo=FALSE,error=FALSE,message=FALSE,results='asis'}
+options(knitr.table.format = "latex")
+options(kableExtra.auto_format = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/Mia_Requests/AggregateTables/Outputs/"
+ write.csv(Age_all_N,paste(outputpath,"Aggregate_Table_All_ByAge_",currentDate,".csv",sep=""), row.names = F,na="")
+ 
+#colnames(cumulative_all)[2] <- "Total Recruits"
+knitr::kable(Age_all_N[,c(9,1:8,11)], caption = 'Table 1. Overall Aggregated Tables by Age Connect', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c","c"),format.args = list(big.mark = ",")) %>%   kable_paper("striped", full_width = F) %>%
+  pack_rows("Sex", 2, 5) %>%
+  pack_rows("Race Ethnicity", 6, 13) %>% 
+  pack_rows("Insurance", 14, 20) %>%
+  pack_rows("Urbanicity", 21, 31) %>%   
+  pack_rows("Socioeconomic Status", 32, 36) %>%   
+  kable_styling(latex_options = c("HOLD_position","scale_down")) %>% add_indent(c(2:36))
+
+for (i in 1:length(Age_pct.list)){
+  
+   tmp2 <- as.data.frame(Age_pct.list[[i]])
+   tmp2$new_group <- factor(tmp2$new_group, levels=c("Overall", "Female","Male","Sex.Other","Sex.Unknown/ Missing",  "White", "Black/ African-American", "Hispanic/ Latinx", "Asian/ Middle Eastern","American Indian/ Alaskan Native", "Native Hawaiian/ Other Pacific Islander", "Multi-racial/ Other", "Race.Unknown", "Private/Commercial", "Medicaid", "Medicare", "Military","Other","Uninsured","Insurance.Unknown","RUCA Code 1","RUCA Code 2", "RUCA Code 3","RUCA Code 4","RUCA Code 5","RUCA Code 6","RUCA Code 7", "RUCA Code 8","RUCA Code 9","RUCA Code 10","Urbanicity.Unknown",
+"First Quartile (ADI scores 1-25)", "Second Quartile (ADI scores 26-50)", "Third Quartile (ADI scores 51-75)",  "Fourth Quartile (ADI scores 76-100)","SES.Unknown/ Missing"))
+
+   tmp2 <- tmp2[order(tmp2$new_group),]
+   tmp2$order <- seq(row_number(tmp2))
+   tmp2$new_group <- gsub("Sex.|Race.|Urbanicity.|SES.","",tmp2$new_group)
+   
+   Site <- unique(tmp2$site)
+   #row_vec <- c(as.numeric(row.names(tmp2)[which(grepl("Overall|Female|White|Private|Code 1 |First", tmp2$new_group))]), nrow(tmp2))
+   a <- as.numeric(tmp2$order[which(grepl("Female", tmp2$new_group))])
+   b <- as.numeric(tmp2$order[which(grepl("White", tmp2$new_group))])
+   c <- as.numeric(tmp2$order[which(grepl("Private", tmp2$new_group))])
+   d <- as.numeric(tmp2$order[which(tmp2$new_group=="RUCA Code 1")])
+   e <- as.numeric(tmp2$order[which(grepl("First", tmp2$new_group))])
+   f <- as.numeric(nrow(tmp2))
+  
+   print(knitr::kable(tmp2[,c(2:11)], caption = paste("Table 1." ,i, ". Aggregated Tables by Age Connect -",Site,sep=" "), row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c","c"),format.args = list(big.mark = ",")) %>%   kable_paper("striped", full_width = F) %>%
+  pack_rows("Sex", a, b-1) %>%
+  pack_rows("Race Ethnicity", b, c-1) %>% 
+  pack_rows("Insurance", c, d-1) %>%
+  pack_rows("Urbanicity", d, e-1) %>%   
+  pack_rows("Socioeconomic Status", e, f) %>%   
+  kable_styling(latex_options = c("HOLD_position","scale_down")) %>% add_indent(c(2:f)))
+
+  write.csv(tmp2,paste(outputpath,"Aggregate_Table_All_ByAge_",Site,currentDate,".csv",sep=""), row.names = F,na="") 
+}
+
+
+```
+#Tables for the data by Age and Sex by Site and Overall
+```{r, eval=TRUE,echo=FALSE}
+options(knitr.table.format = "latex")
+options(kableExtra.auto_format = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+#Age_Sex_all_pct <- Age_Sex_all_pct %>% select(Race.Ethnicity,contains(c("Female","Male","Unknown","Total"))) 
+
+names(Age_Sex_all_pct)<- gsub("_Females|_Males|_Unknown","", names(Age_Sex_all_pct))
+ write.csv(Age_Sex_all_pct,paste(outputpath,"Aggregate_Table_All_ByAge_Sex_",currentDate,".csv",sep=""), row.names = F,na="")
+knitr::kable(Age_Sex_all_pct[,c(1:37)], caption = 'Table 2. Aggregated Tables by Age and Sex Overall  Connect', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options = "scale_down")%>% landscape() %>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "Unknown"= 9, "By Age"=8," "=1), bold=T) %>% add_indent(c(2:8))
+
+###by site
+knitr::kable(tb_SH2[,c(1:28)], caption = 'Table 2.1. Aggregated Tables by Age and Sex Overall Connect - Sanford Health', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options = "scale_down") %>% landscape()%>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "By Age"= 8, " "=1), bold=T) 
+
+ write.csv(tb_SH2[,c(1:28)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_SH",currentDate,".csv",sep=""), row.names = F,na="")
+
+knitr::kable(tb_HFH2[,c(1:28)], caption = 'Table 2.2. Aggregated Tables by Age and Sex Overall Connect - Henry Ford Health', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options = "scale_down") %>% landscape()%>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "By Age"= 8, " "=1), bold=T) 
+
+ write.csv(tb_HFH2[,c(1:28)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_HFH",currentDate,".csv",sep=""), row.names = F,na="")
+ 
+knitr::kable(tb_MF1[,c(1:28)], caption = 'Table 2.3. Aggregated Tables by Age and Sex Overall Connect - MCRI', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options ="scale_down")%>% landscape() %>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "By Age"= 8, " "=1), bold=T) 
+
+ write.csv(tb_MF1[,c(1:28)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_MF",currentDate,".csv",sep=""), row.names = F,na="")
+
+#tb_ChC1 <- tb_ChC1 %>% selet(new_group,contains(c("Female","Male","Unknown",Age)),Total,site)
+
+knitr::kable(tb_HP2_pct[,c(1:37)], caption = 'Table 2.4 Aggregated Tables by Age and Sex Overall Connect - HP', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options ="scale_down") %>% landscape()%>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "Unknown"= 9, "By Age"=8," "=1), bold=T) 
+
+ write.csv(tb_HP2_pct[,c(1:37)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_HP",currentDate,".csv",sep=""), row.names = F,na="")
+#tb_ChC1 <- tb_ChC1 %>% selet(new_group,contains(c("Female","Male","Unknown",Age)),Total,site)
+
+knitr::kable(tb_ChC1[,c(1:19,21:28,20)], caption = 'Table 2.5 Aggregated Tables by Age and Sex Overall Connect - UChicago', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options = "scale_down") %>% landscape()%>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "By Age"= 8, " "=1), bold=T) 
+
+ write.csv(tb_ChC1[,c(1:19,21:28,20)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_UChicago",currentDate,".csv",sep=""), row.names = F,na="")
+
+names(Age_Sex_KPGA.pct)[1] <- "Race Ethnicity"
+knitr::kable(Age_Sex_KPGA.pct[,c(1:37)], caption = 'Table 2. Aggregated Tables by Age and Sex Connect - KPGA', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options ="scale_down") %>% landscape()%>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "Unknown"= 9, "By Age"=8," "=1), bold=T)  
+ write.csv(Age_Sex_KPGA.pct[,c(1:37)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_KPGA",currentDate,".csv",sep=""), row.names = F,na="")
+
+names(Age_Sex_KPHI.pct)[1] <- "Race Ethnicity"
+knitr::kable(Age_Sex_KPHI.pct[,c(1:37)], caption = 'Table 2. Aggregated Tables by Age and Sex Connect - KPHI', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options = "scale_down") %>% landscape()%>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "Unknown"= 9, "By Age"=8," "=1), bold=T)
+  
+names(Age_Sex_KPNW.pct)[1] <- "Race Ethnicity"
+knitr::kable(Age_Sex_KPNW.pct[,c(1:37)], caption = 'Table 2. Aggregated Tables by Age and Sex Connect - KPNW', row.names=FALSE, align=c("l", "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c",
+                             "c", "c", "c","c", "c","c","c", "c","c"),format.args = list(big.mark = ","),booktabs = T) %>%   kable_styling(latex_options = "scale_down")%>% landscape() %>%
+  add_header_above(c(" "=1, "Females"=9, "Males"= 9, "Unknown"= 9, "By Age"=8," "=1), bold=T) 
+
+ write.csv(Age_Sex_KPHI.pct[,c(1:37)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_KPHI",currentDate,".csv",sep=""), row.names = F,na="")
+ write.csv(Age_Sex_KPNW.pct[,c(1:37)],paste(outputpath,"Aggregate_Table_All_ByAge_Sex_KPNW",currentDate,".csv",sep=""), row.names = F,na="")
+
+
+```
