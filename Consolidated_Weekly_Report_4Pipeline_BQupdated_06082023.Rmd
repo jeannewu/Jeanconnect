@@ -1666,8 +1666,8 @@ campaign.combo0 <- subset(campaign.combo,select=c("Site",new_order))
 #Table 8. Pre-Consent Opt-Out Reasons Among Those that Opted Out  #d_706283025
 #among RcrtSI_OptOut_v1r0 (158291096)= 353358909 AND RcrtSI_RecruitType_v1r0 = 486306141
 optout_reasons <- colnames(data)[grepl("706283025",colnames(data))]  #35 #36 on 05/30/2023
-optout_reasons <- optout_reasons[-16] #to remove "d_706283025_d_415693436" character outputs #34 #35
-optout_reasons <- optout_reasons[!grepl("415693436",optout_reasons)]
+#optout_reasons <- optout_reasons[-16] #to remove "d_706283025_d_415693436" character outputs #34 #35
+#optout_reasons <- optout_reasons[!grepl("415693436",optout_reasons)]
 
 
 optout <- tbl(con,"participants_JP")  %>%  
@@ -1708,8 +1708,8 @@ optout_pct <- optout %>% mutate(Percent = ifelse(is.na(`Total Opt-Outs`),"0 %",p
 
 #table 47 and 48
 optout_reasons <- recrvar$column_name[grepl("706283025",recrvar$column_name)]  #35 #36 on 05/30/2023 
-optout_reasons <- optout_reasons[-16] #to remove "d_706283025_d_415693436" character outputs #34 #35
-optout_reasons <- optout_reasons[!grepl("415693436",optout_reasons)]
+#optout_reasons <- optout_reasons[-16] #to remove "d_706283025_d_415693436" character outputs #34 #35
+#optout_reasons <- optout_reasons[!grepl("415693436",optout_reasons)]
 opt_out <- tbl(con,"participants_JP")  %>%  
   filter(.,d_512820379=='486306141' & d_821247024 != '922622075' & !is.na(d_827220437) & state_d_158291096 =='353358909' & d_919254129 %in% c('104430631',NA)) %>% 
   select(d_827220437, state_d_158291096,d_230663853,d_919254129,all_of(optout_reasons)) %>% as_tibble %>%
@@ -1763,10 +1763,10 @@ opt_out <- tbl(con,"participants_JP")  %>%
  empty_columns <- colSums(is.na(opt_out) |opt_out == "") == nrow(opt_out)
 # colnames(opt_out[empty_columns])
 # [1] "state_state_d_706283025_d_517101990"      checked on 06/07/2023 shown in the BQ participants_JK table
- optout1 <- opt_out[!empty_columns] #32 columns #34 columns(02/21/2023) #35 columns(05/30/2023)         
+ optout1 <- opt_out[!empty_columns] %>% mutate(state_d_706283025_d_415693436 = ifelse(nchar(state_d_706283025_d_415693436)==0 |is.na(state_d_706283025_d_415693436),104430631,353358909)) #32 columns #34 columns(02/21/2023) #35 columns(05/30/2023)         
 
 
-optout_reason1 <- colnames(optout1)[c(5:38)]
+optout_reason1 <- colnames(optout1)[c(5:39)]
 
 #optout_reason1 <- colnames(optout1)[c(6:17,19:32)]
 opt_id <- list()
@@ -3145,38 +3145,24 @@ Fig4.timetrend <- ggplot(recr_veri_act_wk,aes(y=Verified_Activities_n1,x=as.Date
 # 
 # All of these plots could be moved down to after Table 33 and before Table 34.
 
-break2 <- seq(0,max(recr_veri_act$total_wdconsent),2)
-plot.data <- recr_veri_act %>%
-    gather(refwd_invite,value, total_dtdestroy,total_wdconsent #,new.refwd.rate
-           ) %>% select(Week.Sunday,Week.Sunday.date,active_recruits,refwd_invite,value) %>% 
-  mutate(type=case_when(#refwd_invite=="new.refwd.rate" ~"# Withdrawal per 1K invitations",
-                        refwd_invite=="total_wdconsent" ~"Withdrawals Only",
-                        refwd_invite=="total_dtdestroy" ~"Data Destruction Only"),
-         type = factor(type,levels=c("Withdrawals Only","Data Destruction Only"))) %>% 
-ggplot(aes(y=value,x=as.Date(Week.Sunday.date),color=type)) + 
-  geom_line() +  geom_point() + scale_color_manual(values = c("gold","red"), name="",
-                     #name="Withdrawals And Data Destruction" ,
-                     labels=c("Withdrawals Only","Data Destruction Only"))+
-  scale_y_continuous(name="# of Withdrawals And \nData Destruction Qequests",limits=c(0,max(recr_veri_act$total_wdconsent)),breaks=break2)+ #limits=c(0,10*round(max(recr_veri_act$total_wdconsent/10),0)),breaks=break2,sec.axis = sec_axis( ~ . /2  , name = "# Withdrawal per 1K invitations",breaks=break2/2)
-                      
-  coord_cartesian(ylim =c(0,max(recr_veri_act$total_wdconsent))) +
-  scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
-  ggtitle(paste("Weekly Counts of Withdrawals and Data Destruction Requests \nThrough", currentDate,"Overall",sep=" "))+
-  theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
-         axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
-         plot.title = element_text(face="bold", size=16),
-         # Remove panel border
-         panel.border = element_blank(),  
-         # Remove panel grid lines
-         panel.grid.major = element_blank(),
-         panel.grid.minor = element_blank(),
-         # Remove panel background
-         panel.background = element_blank(),
-         # Add axis line
-         axis.line = element_line(colour = "grey") ,
-         ##put the legend in the plot
-         legend.position = "bottom"
-  ) 
+###Request is updated on Sep. 25, 2023:
+# For the cumulative plots, we would like four things to be shown:
+# 
+# The cumulative withdrawals as shown by the left y axis
+# The cumulative data destructions as shown by the left y axis
+# One trend line for withdrawals/consented participants (regardless of verification status). This can be per 1000 for the scale on the right y axis.
+# One trend line for data destructions/consented participants (regardless of verification status). This can be per 1000 for the scale on the right y axis.
+# Then this would prompt title changes for the three cumulative plots to say "by Number of Consented Participants" instead of "by Number of Verified Participants"
+# We also have some feedback just to clean these up a bit.
+# 
+# In both the weekly and cumulative plots, on the left y axis "And" can be lowercase and changed to "and"
+# In both the weekly and cumulative plots, in the legend, instead of "Data Destruction Only" can these labels read "Data Destructions"? We realized this would be more accurate.
+# In both the weekly and cumulative plots, could you change the yellow color that is being used for "withdrawals only" to something darker, maybe blue? The yellow may not come across well on presentations.
+# For the cumulative plots, can the colors used for withdrawals and data destructions carry over from the weekly plots? If we make the "withdrawals only" in the weekly plots blue (from comment 8 above), can this also be blue in the cumulative plots? and then if the "data destructions" are red in the weekly plots, can these be red in the cumulative plots? And then two other dark colors should be fine for the remaining two trend lines in the cumulative plots.
+# In the cumulative plots, in the legend, can you remove the "#" from the labels for both trend lines, so they now read "Withdrawals per 1K Consented Participants" and "Data Destructions per 1K Consented Participants"
+# In the cumulative plots, can you also remove the "#" from the right y axis, so this now reads "Withdrawals/Data Destructions per 1K Consented"
+
+
 
 ###by site
 
@@ -3209,20 +3195,20 @@ allacts.wk.total.site <- filter(veri_act,allacts1==353358909) %>% arrange(site,a
   dplyr::summarize(total_allacts=n(),
                    allacts.time.max=max(allacts.time1,rm.na=T))
 
-dtdestroy.wk.total.site <- filter(veri_act,DestroyDataVer ==353358909) %>% arrange(site,dtdestroy.week) %>% 
-  group_by(site,dtdestroy.week)%>%
-  dplyr::summarize(total_dtdestroy=n())
-
-wdconsent.wk.total.site <- filter(veri_act,WdConsentVer ==353358909 & !is.na(wdconsent.week)) %>% arrange(site,wdconsent.week) %>% 
-  group_by(site,wdconsent.week)%>%
-  dplyr::summarize(total_wdconsent=n())
-
+# dtdestroy.wk.total.site <- filter(veri_act,DestroyDataVer ==353358909) %>% arrange(site,dtdestroy.week) %>% 
+#   group_by(site,dtdestroy.week)%>%
+#   dplyr::summarize(total_dtdestroy=n())
+# 
+# wdconsent.wk.total.site <- filter(veri_act,WdConsentVer ==353358909 & !is.na(wdconsent.week)) %>% arrange(site,wdconsent.week) %>% 
+#   group_by(site,wdconsent.week)%>%
+#   dplyr::summarize(total_wdconsent=n())
+# 
 
 recrui_wk_verified1.site <- merge(recrui_wk_verified.site, allacts.wk.total.site,by.x=c("site","Week.Sunday"),by=c("site","allacts.week1"), all.x=TRUE,all.y=TRUE)
-recrui_wk_verified1.site <- merge(recrui_wk_verified1.site, dtdestroy.wk.total.site,by.x=c("site","Week.Sunday"),by=c("site","dtdestroy.week"), all.x=TRUE,all.y=TRUE)
-recrui_wk_verified1.site <- merge(recrui_wk_verified1.site, wdconsent.wk.total.site,by.x=c("site","Week.Sunday"),by=c("site","wdconsent.week"), all.x=TRUE,all.y=TRUE)
+# recrui_wk_verified1.site <- merge(recrui_wk_verified1.site, dtdestroy.wk.total.site,by.x=c("site","Week.Sunday"),by=c("site","dtdestroy.week"), all.x=TRUE,all.y=TRUE)
+# recrui_wk_verified1.site <- merge(recrui_wk_verified1.site, wdconsent.wk.total.site,by.x=c("site","Week.Sunday"),by=c("site","wdconsent.week"), all.x=TRUE,all.y=TRUE)
 
-vars0 <- c("active_recruits","total_verifieds","total_dtdestroy","total_wdconsent","total_allacts")
+vars0 <- c("active_recruits","total_verifieds","total_allacts") #,"total_dtdestroy","total_wdconsent"
 
 
 recrui_wk_verified1.site <- recrui_wk_verified1.site %>% 
@@ -3245,7 +3231,7 @@ recrui_wk_verified1.site <- recrui_wk_verified1.site %>%
                                      levels=c("Verified","Survey+Blood","Invitations"))
   
    plot.act <- list()
-   plot.ref <- list()
+
   for (i in 1:9){
     s <- levels(veri_resp$site)[i]
 
@@ -3284,26 +3270,64 @@ recrui_wk_verified1.site <- recrui_wk_verified1.site %>%
       ) 
     print(act.plot)
     plot.act[[i]] <- act.plot
- 
+  }
 ##refusal & data destruction
- max_ys <- ceiling(max(recrui_wk_verified1.site$total_wdconsent[which(recrui_wk_verified1.site$site==s)])) 
- break2.s <- seq(0,max_ys,1)
-                 
-   plot.data.site <- filter(recrui_wk_verified1.site,site==s & as.Date(Week.Sunday.date) < currentDate) %>% 
-     gather(refwd_invite,value, total_dtdestroy,total_wdconsent) %>% select(Week.Sunday,Week.Sunday.date,active_recruits,refwd_invite,value) %>% 
-  mutate(type=case_when(#refwd_invite=="new.refwd.rate" ~"# withdrawal per 1K invitations",
-                        refwd_invite=="total_wdconsent" ~"Withdrawals Only",
-                        refwd_invite=="total_dtdestroy" ~"Data Destruction Only"),
-         type = factor(type,levels=c("Withdrawals Only","Data Destruction Only")),
-         value.new = ifelse(refwd_invite=="new.refwd.rate", value/a, value)) %>% 
-ggplot(aes(y=value.new,x=as.Date(Week.Sunday.date),color=type)) + 
-  geom_line() +  geom_point() + scale_color_manual(values = c("gold","red"), 
-                     name="" ,labels=c("Withdrawals Only","Data Destruction Only"))+
-  scale_y_continuous(name="# of Withdrawals And \nData Destruction Qequests", limits=c(0,max_ys),breaks=break2.s, #sec.axis = sec_axis(~ .*a, name = "# withdrawal per 1K invitations",breaks=break2.s)
-                     ) +     
-  coord_cartesian(ylim =c(0,max_ys)) +
+ # 3 cumulative plots as well for consented participants (updated Sep. 25, 2023):
+# The x axis would be time, the y axis would be the # of cumulative withdrawals and data destruction requests.
+# On this plot, we would like to see two trend lines. One for (#of withdrawals/# verified participants), the second for (#of data destructions/#verified participants).
+# 
+# We would like 3 of these plots total, one plot for all sites combined and then 2 additional plots for 2 groups of sites. Group 1 would be the KPs and University of Chicago. Group 2 would be the remaining four sites, HP, HFH, SF, MF.
+
+recrstart.date <-  as.Date(min(as.POSIXct(data$d_471593703),na.rm=TRUE))
+recrstart.Sunday <- unique(as.Date(ifelse(wday(as.Date(min(ymd_hms(data$d_471593703),na.rm=TRUE))) == 1, as.Date(min(ymd_hms(data$d_471593703),na.rm=TRUE)),as.Date(as.Date(min(ymd_hms(data$d_471593703),na.rm=TRUE))-wday(as.Date(min(ymd_hms(data$d_471593703),na.rm=TRUE))) +1 ))))
+
+
+recr_consent <- filter(data,d_919254129 == 353358909) %>% 
+  mutate(recrstart.date = as.Date(min(as.POSIXct(d_471593703),na.rm=TRUE)),
+         recrstart.Sunday = as.Date(ifelse(wday(as.Date(min(ymd_hms(d_471593703),na.rm=TRUE))) == 1, as.Date(min(ymd_hms(d_471593703),na.rm=TRUE)),as.Date(as.Date(min(ymd_hms(d_471593703),na.rm=TRUE))-wday(as.Date(min(ymd_hms(d_471593703),na.rm=TRUE))) +1 ))),
+         consent_time = ymd_hms(d_454445267),
+         consent_wk = ifelse(!is.na(consent_time),ceiling(as.numeric(difftime(as_date(consent_time)+days(5),as_date(recrstart.date),units="days"))/7),NA)) %>% group_by(consent_wk)%>%
+  dplyr::summarize(total_consent=n())
+
+recr_consent.dtdy <- filter(data,d_919254129 == 353358909 & d_747006172 == 353358909 & d_831041022 == 353358909) %>% 
+  mutate(dtdestroy.week = ifelse(!is.na(d_269050420),ceiling(as.numeric(difftime(as_date(ymd_hms(d_269050420)+days(5)),as_date(recrstart.date), units="days"))/7),NA))%>% group_by(dtdestroy.week)%>%
+  dplyr::summarize(total_dtdestroy=n())
+
+recr_consent.rfwd <- filter(data,d_919254129 == 353358909 & d_747006172 == 353358909 & d_831041022 != 353358909) %>% 
+  mutate(wdconsent.week = ifelse(!is.na(d_659990606),ceiling(as.numeric(difftime(as_date(ymd_hms(d_659990606)+days(5)),as_date(recrstart.date), units="days"))/7),NA)) %>% group_by(wdconsent.week) %>% 
+  dplyr::summarize(total_wdconsent=n())
+
+recr_consent_rfdd <- merge(recr_veri_act[,c("Week.Sunday","Week.Sunday.date","total_verifieds")],recr_consent,by.x="Week.Sunday",by.y="consent_wk", all.x = T, all.y=T)
+ recr_consent_rfdd <- merge(recr_consent_rfdd,recr_consent.rfwd,by.x="Week.Sunday",by.y="wdconsent.week", all.x = T, all.y=T) 
+ recr_consent_rfdd <- merge(recr_consent_rfdd,recr_consent.dtdy,by.x="Week.Sunday",by.y="dtdestroy.week", all.x = T, all.y=T)  
+vars.rfwd <- c("total_consent","total_dtdestroy","total_wdconsent") 
+recr_consent_rfdd <- recr_consent_rfdd %>% mutate((across(all_of(vars.rfwd),~replace_na(., 0)))) %>%
+  mutate(across(all_of(vars.rfwd), ~as.numeric(.)),
+         #new.refwd.rate=ifelse(!is.na(total_wdconsent) & active_recruits !=0, 1000*total_wdconsent/active_recruits,0),
+         total_dtdestroy.cum=cumsum(total_dtdestroy),
+         total_wdconsent.cum=cumsum(total_wdconsent),
+         total_consent.cum =cumsum(total_consent),
+         ratio_wd_consent = ifelse(total_consent.cum ==0, 0, 10000*total_wdconsent.cum/total_consent.cum),
+         ratio_ddest_consent = ifelse(total_dtdestroy.cum == 0, 0, 10000*total_dtdestroy.cum/total_consent.cum))
+
+  
+break2 <- seq(0,max(recr_consent_rfdd$total_wdconsent),1)
+plot.data <- recr_consent_rfdd %>%
+    gather(refwd_consent,value, total_dtdestroy,total_wdconsent #,new.refwd.rate
+           ) %>% select(Week.Sunday,Week.Sunday.date,total_consent,refwd_consent,value) %>% 
+  mutate(type=case_when(#refwd_invite=="new.refwd.rate" ~"# Withdrawal per 1K invitations",
+                        refwd_consent=="total_wdconsent" ~"Withdrawals Only",
+                        refwd_consent=="total_dtdestroy" ~"Data Destructions"),
+         type = factor(type,levels=c("Withdrawals Only","Data Destructions"))) %>% 
+ggplot(aes(y=value,x=as.Date(Week.Sunday.date),color=type)) + 
+  geom_line() +  geom_point() + scale_color_manual(values = c("darkblue","red"), name="",
+                     #name="Withdrawals And Data Destruction" ,
+                     labels=c("Withdrawals Only","Data Destructions"))+
+  scale_y_continuous(name="# of Withdrawals and \nData Destruction  Requests",limits=c(0,max(recr_veri_act$total_wdconsent)),breaks=break2)+ #limits=c(0,10*round(max(recr_veri_act$total_wdconsent/10),0)),breaks=break2,sec.axis = sec_axis( ~ . /2  , name = "# Withdrawal per 1K invitations",breaks=break2/2)
+                      
+  coord_cartesian(ylim =c(0,max(recr_veri_act$total_wdconsent))) +
   scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
-  ggtitle(paste("Weekly Counts of Withdrawals and Data Destruction Request \nthrough", currentDate,s,sep=" "))+
+  ggtitle(paste("Weekly Counts of Withdrawals and Data Destruction Requests \nThrough", currentDate,"Overall",sep=" "))+
   theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
          axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
          plot.title = element_text(face="bold", size=16),
@@ -3318,36 +3342,28 @@ ggplot(aes(y=value.new,x=as.Date(Week.Sunday.date),color=type)) +
          axis.line = element_line(colour = "grey") ,
          ##put the legend in the plot
          legend.position = "bottom"
-  )
- print(plot.data.site)
- plot.ref[[i]] <- plot.data.site
-  }
-   
- # 3 cumulative plots as well:
-# The x axis would be time, the y axis would be the # of cumulative withdrawals and data destruction requests.
-# On this plot, we would like to see two trend lines. One for (#of withdrawals/# verified participants), the second for (#of data destructions/#verified participants).
-# 
-# We would like 3 of these plots total, one plot for all sites combined and then 2 additional plots for 2 groups of sites. Group 1 would be the KPs and University of Chicago. Group 2 would be the remaining four sites, HP, HFH, SF, MF.
+  ) 
 
+ max_y.refwd <- 10*ceiling(max(recr_consent_rfdd$total_wdconsent.cum)/10)
+ break.rfwd <- seq(0,max_y.refwd,ceiling(max(recr_consent_rfdd$total_wdconsent.cum)/10))
  
- max_y.refwd <- 10*ceiling(max(recr_veri_act$total_wdconsent.cum)/10)
- break.rfwd <- seq(0,max_y.refwd,ceiling(max(recr_veri_act$total_wdconsent.cum)/10))
- rfwd.cum.plot <- recr_veri_act %>% 
-   gather(refwd_type,value.cum, total_dtdestroy.cum,total_wdconsent.cum) %>% 
-           select(Week.Sunday,Week.Sunday.date,active_recruits,refwd_type,value.cum) %>% 
-  mutate(type=case_when(#refwd_invite=="new.refwd.rate" ~"# Withdrawal per 1K invitations",
+ rfwd.cum.plot <- recr_consent_rfdd %>% 
+   gather(refwd_type,value.cum, total_dtdestroy.cum,total_wdconsent.cum,ratio_wd_consent,ratio_ddest_consent) %>% 
+           select(Week.Sunday,Week.Sunday.date,total_consent,refwd_type,value.cum) %>% 
+  mutate(type=case_when(refwd_type=="ratio_wd_consent" ~"Withdrawals per 1K Consented Participants",
+                        refwd_type=="ratio_ddest_consent" ~"Data Destructions per 1K Consented Participants",
                         refwd_type=="total_wdconsent.cum" ~"Withdrawals Only",
-                        refwd_type=="total_dtdestroy.cum" ~"Data Destruction Only"),
-         type = factor(type,levels=c("Withdrawals Only","Data Destruction Only"))) %>% 
+                        refwd_type=="total_dtdestroy.cum" ~"Data Destructions"),
+         type = factor(type,levels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destructions per 1K Consented Participants"))) %>% 
 ggplot(aes(y=value.cum,x=as.Date(Week.Sunday.date),color=type)) + 
-  geom_line() +  geom_point() + scale_color_manual(values = c("darkorange","darkred"), name="",
+  geom_line() +  geom_point() + scale_color_manual(values = c("darkblue","red","darkorange","darkred"), name="",
                      #name="Withdrawals And Data Destruction" ,
-                     labels=c("Withdrawals Only","Data Destruction Only"))+
-  scale_y_continuous(name="# of Withdrawals And \nData Destruction Qequests",limits=c(0,max_y.refwd),breaks=break.rfwd)+ #limits=c(0,10*round(max(recr_veri_act$total_wdconsent/10),0)),breaks=break2,sec.axis = sec_axis( ~ . /2  , name = "# Withdrawal per 1K invitations",breaks=break2/2)
-                      
+                     labels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destruction per 1K Consented Participants"))+
+  scale_y_continuous(name="# Withdrawals and/ \nData Destruction Requests", limits=c(0,max_y.refwd),breaks=break.rfwd,sec.axis = sec_axis( ~ . /10  , name = "Withdrawals/Data Destructions per 1K Consented",breaks=break.rfwd/10,labels = scales::number_format(accuracy = 0.1)))+
+     #) limits=c(0,10*round(max(recr_veri_act$total_wdconsent/10),0)),breaks=break2                
   coord_cartesian(ylim =c(0,max_y.refwd)) +
   scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
-  ggtitle(paste("Cumulative Withdrawals and Data Destructions \nby Number of Verified Participants Through", currentDate,"Overall",sep=" "))+
+  ggtitle(paste("Cumulative Withdrawals and Data Destructions \nby Number of Consented Participants Through", currentDate,"Overall",sep=" "))+
   theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
          axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
          plot.title = element_text(face="bold", size=16),
@@ -3364,39 +3380,122 @@ ggplot(aes(y=value.cum,x=as.Date(Week.Sunday.date),color=type)) +
          legend.position = "bottom"
   )  
  
- ##non KP sites & KP sites:
- recrui_wk_verified1.kp <- recrui_wk_verified1.site %>% group_by(KPgroups,Week.Sunday,Week.Sunday.date) %>% dplyr::summarize(total_dtdestroy=sum(total_dtdestroy),
+##by site
+recr_consent.site <- filter(data,d_919254129 == 353358909) %>% 
+  mutate(consent_time = ymd_hms(d_454445267),
+         consent_wk = ifelse(!is.na(consent_time),ceiling(as.numeric(difftime(as_date(consent_time)+days(5),as_date(recrstart.date),units="days"))/7),NA)) %>% group_by(site,consent_wk)%>%
+  dplyr::summarize(total_consent=n())
+
+recr_consent.dtdy.site <- filter(data,d_919254129 == 353358909 & d_747006172 == 353358909 & d_831041022 == 353358909) %>% 
+  mutate(dtdestroy.week = ifelse(!is.na(d_269050420),ceiling(as.numeric(difftime(as_date(ymd_hms(d_269050420)+days(5)),as_date(recrstart.date), units="days"))/7),NA))%>% group_by(site,dtdestroy.week)%>%
+  dplyr::summarize(total_dtdestroy=n())
+
+recr_consent.rfwd.site <- filter(data,d_919254129 == 353358909 & d_747006172 == 353358909 & d_831041022 != 353358909) %>% 
+  mutate(wdconsent.week = ifelse(!is.na(d_659990606),ceiling(as.numeric(difftime(as_date(ymd_hms(d_659990606)+days(5)),as_date(recrstart.date), units="days"))/7),NA)) %>% group_by(site,wdconsent.week) %>% 
+  dplyr::summarize(total_wdconsent=n())
+
+recr_consent_rfdd.site <- merge(recrui_wk_verified.site[,c("site","Week.Sunday","Week.Sunday.date","total_verifieds")],recr_consent.site,by.x=c("site","Week.Sunday"),by.y=c("site","consent_wk"), all.x = T, all.y=T)
+ recr_consent_rfdd.site <- merge(recr_consent_rfdd.site,recr_consent.rfwd.site,by.x=c("site","Week.Sunday"),by.y=c("site","wdconsent.week"), all.x = T, all.y=T) 
+ recr_consent_rfdd.site <- merge(recr_consent_rfdd.site,recr_consent.dtdy.site,by.x=c("site","Week.Sunday"),by.y=c("site","dtdestroy.week"), all.x = T, all.y=T)  
+ 
+ 
+vars.rfwd <- c("total_consent","total_dtdestroy","total_wdconsent") 
+recr_consent_rfdd.site <- recr_consent_rfdd.site %>% mutate((across(all_of(vars.rfwd),~replace_na(., 0)))) %>%
+  mutate(across(all_of(vars.rfwd), ~as.numeric(.)),
+         #new.refwd.rate=ifelse(!is.na(total_wdconsent) & active_recruits !=0, 1000*total_wdconsent/active_recruits,0),
+         total_dtdestroy.cum=cumsum(total_dtdestroy),
+         total_wdconsent.cum=cumsum(total_wdconsent),
+         total_consent.cum =cumsum(total_consent),
+         ratio_wd_consent = ifelse(total_consent.cum ==0, 0, 1000*total_wdconsent.cum/total_consent.cum),
+         ratio_ddest_consent = ifelse(total_dtdestroy.cum == 0, 0, 1000*total_dtdestroy.cum/total_consent.cum),
+         Week.Sunday.date = as.Date(ifelse(is.na(Week.Sunday.date), recrstart.Sunday+dweeks(Week.Sunday),Week.Sunday.date)))
+ 
+ 
+plot.const <- list()
+for (i in 1:9){
+    s <- levels(veri_resp$site)[i]
+    max_ys <- ceiling(max(recr_consent_rfdd.site$total_wdconsent[which(recr_consent_rfdd.site$site==s)])) 
+    break2.s <- seq(0,max_ys,1)
+    
+    plot.consent.site <- filter(recr_consent_rfdd.site,site==s & as.Date(Week.Sunday.date) < currentDate) %>% 
+        gather(refwd_consent,value, total_dtdestroy,total_wdconsent) %>% select(Week.Sunday,Week.Sunday.date,total_verifieds,refwd_consent,value) %>% 
+        mutate(type=case_when(#refwd_invite=="new.refwd.rate" ~"# withdrawal per 1K invitations",
+            refwd_consent=="total_wdconsent" ~"Withdrawals Only",
+            refwd_consent=="total_dtdestroy" ~"Data Destructions"),
+            type = factor(type,levels=c("Withdrawals Only","Data Destructions"))) %>% 
+        ggplot(aes(y=value,x=as.Date(Week.Sunday.date),color=type)) + 
+        geom_line() +  geom_point() + scale_color_manual(values = c("darkblue","red"), 
+                                                         name="" ,labels=c("Withdrawals Only","Data Destructions"))+
+        scale_y_continuous(name="# of Withdrawals and \nData Destruction Requests", limits=c(0,max_ys),breaks=break2.s, #sec.axis = sec_axis(~ .*a, name = "# withdrawal per 1K invitations",breaks=break2.s)
+        ) +     
+        coord_cartesian(ylim =c(0,max_ys)) +
+        scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
+        ggtitle(paste("Weekly Counts of Withdrawals and Data Destruction Requests \nThrough", currentDate,s,sep=" "))+
+        theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
+               axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
+               plot.title = element_text(face="bold", size=16),
+               # Remove panel border
+               panel.border = element_blank(),  
+               # Remove panel grid lines
+               panel.grid.major = element_blank(),
+               panel.grid.minor = element_blank(),
+               # Remove panel background
+               panel.background = element_blank(),
+               # Add axis line
+               axis.line = element_line(colour = "grey") ,
+               ##put the legend in the plot
+               legend.position = "bottom"
+        )
+    print(plot.consent.site)
+    plot.const[[i]] <- plot.consent.site
+}
+
+ ##non KP sites:
+ recr_consent.KP <- recr_consent_rfdd.site %>% 
+  mutate(KPgroups=(ifelse(grepl("Kaiser|Chicago", site), 1, 0))) %>% 
+   select(site, KPgroups, Week.Sunday,Week.Sunday.date,total_verifieds,total_consent,total_wdconsent,total_dtdestroy) %>%  group_by(KPgroups,Week.Sunday,Week.Sunday.date) %>%
+  dplyr::summarize(total_consent=sum(total_consent),
+                 total_dtdestroy=sum(total_dtdestroy),
                  total_wdconsent=sum(total_wdconsent),
-                 total_verifieds=sum(total_verifieds)) %>% group_by(KPgroups) %>% 
+                 total_verifieds=sum(total_verifieds,na.rm=T)) %>% group_by(KPgroups) %>% 
    mutate(total_dtdestroy.cum.kp=cumsum(total_dtdestroy),
        total_wdconsent.cum.kp=cumsum(total_wdconsent),
-       total_verified.cum.kp=cumsum(total_verifieds)) 
-         
-           
+       total_verified.cum.kp=cumsum(total_verifieds),
+       total_consent.cum.kp=cumsum(total_consent),
+       ratio_wd_consent = ifelse(cumsum(total_consent) == 0, 0, 1000*total_wdconsent.cum.kp/cumsum(total_consent)),
+       ratio_ddest_consent = ifelse(cumsum(total_consent) == 0, 0, 1000*total_dtdestroy.cum.kp/cumsum(total_consent))) 
+ 
+
 for (KP in c(0,1)){
-  dt <- recrui_wk_verified1.kp %>% filter(., KPgroups==KP)
-  note <- if(KP==1){"KPs & UChicago"}
-            else{
+  dt <- filter(recr_consent.KP,KPgroups==KP) 
+  
+  note <- if(KP==1){
+    "KPs & UChicago"
+    }else{
              "HP, HFH, SF, MF" 
-            }
+     }
+  
+ 
 #print(note)
  max_y.refwd.kp <- 10*ceiling(max(dt$total_wdconsent.cum.kp)/10)
- break.rfwd.kp <- seq(ceiling(max(dt$total_wdconsent.cum.kp)/10),max_y.refwd,ceiling(max(dt$total_wdconsent.cum.kp)/10))
- rfwd.cum.plot.kp <- dt %>%  gather(refwd_type,value.cum, total_dtdestroy.cum.kp,total_wdconsent.cum.kp) %>% 
-           select(Week.Sunday,Week.Sunday.date,refwd_type,value.cum) %>% 
-  mutate(type=case_when(#refwd_invite=="new.refwd.rate" ~"# Withdrawal per 1K invitations",
+ break.rfwd.kp <- seq(0,max_y.refwd,ceiling(max(dt$total_wdconsent.cum.kp)/10))
+ 
+ rfwd.cum.plot.kp <- dt %>%  gather(refwd_type,value.cum, total_dtdestroy.cum.kp,total_wdconsent.cum.kp,ratio_wd_consent,ratio_ddest_consent) %>% 
+           select(KPgroups,Week.Sunday,Week.Sunday.date,refwd_type,value.cum) %>% 
+  mutate(type=case_when(refwd_type=="ratio_wd_consent" ~"Withdrawals per 1K Consented Participants",
+                        refwd_type=="ratio_ddest_consent" ~"Data Destructions per 1K Consented Participants",
                         refwd_type=="total_wdconsent.cum.kp" ~"Withdrawals Only",
-                        refwd_type=="total_dtdestroy.cum.kp" ~"Data Destruction Only"),
-         type = factor(type,levels=c("Withdrawals Only","Data Destruction Only"))) %>% 
+                        refwd_type=="total_dtdestroy.cum.kp" ~"Data Destructions"),
+         type = factor(type,levels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destructions per 1K Consented Participants"))) %>%
 ggplot(aes(y=value.cum,x=as.Date(Week.Sunday.date),color=type)) + 
-  geom_line() +  geom_point() + scale_color_manual(values = c("darkorange","darkred"), name="",
+  geom_line() +  geom_point() + scale_color_manual(values = c("darkblue","red","darkorange","darkred"), name="",
                      #name="Withdrawals And Data Destruction" ,
-                     labels=c("Withdrawals Only","Data Destruction Only"))+
-  scale_y_continuous(name="# of Withdrawals And \nData Destruction Qequests", limits=c(0,max_y.refwd.kp),
-                     breaks=break.rfwd.kp) +
+                     labels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destructions per 1K Consented Participants")) +
+  scale_y_continuous(name="# Withdrawals and \nData Destruction Requests", limits=c(0,max_y.refwd.kp),
+                     breaks=c(0,break.rfwd.kp),sec.axis = sec_axis( ~ .  , name = "Withdrawals/Data Destructions \nper 1K Consented",breaks=c(0,break.rfwd.kp),labels = scales::number_format(accuracy = 0.1))) +
    coord_cartesian(ylim =c(0,max_y.refwd.kp)) +
   scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
-  ggtitle(paste("Cumulative Withdrawals and Data Destructions \nby Number of Verified Participants Through", currentDate,note,sep=" "))+
+  ggtitle(paste("Cumulative Withdrawals and Data Destructions \nby Number of Consented Participants Through\n", currentDate,note,sep=" "))+
   theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
          axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
          plot.title = element_text(face="bold", size=16),
@@ -3414,8 +3513,45 @@ ggplot(aes(y=value.cum,x=as.Date(Week.Sunday.date),color=type)) +
   )  
 print(rfwd.cum.plot.kp)
 }
- 
 
+
+refwd.cumplot <- function(dt,note){
+ max_y.refwd.kp <- 10*ceiling(max(dt$total_wdconsent.cum.kp)/10)
+ break.rfwd.kp <- seq(0,max_y.refwd,ceiling(max(dt$total_wdconsent.cum.kp)/10))
+ 
+ rfwd.cum.plot.kp <- dt %>%  gather(refwd_type,value.cum, total_dtdestroy.cum.kp,total_wdconsent.cum.kp,ratio_wd_consent,ratio_ddest_consent) %>% 
+           select(KPgroups,Week.Sunday,Week.Sunday.date,refwd_type,value.cum) %>% 
+  mutate(type=case_when(refwd_type=="ratio_wd_consent" ~"Withdrawals per 1K Consented Participants",
+                        refwd_type=="ratio_ddest_consent" ~"Data Destructions per 1K Consented Participants",
+                        refwd_type=="total_wdconsent.cum.kp" ~"Withdrawals Only",
+                        refwd_type=="total_dtdestroy.cum.kp" ~"Data Destructions"),
+         type = factor(type,levels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destructions per 1K Consented Participants"))) %>%
+ggplot(aes(y=value.cum,x=as.Date(Week.Sunday.date),color=type)) + 
+  geom_line() +  geom_point() + scale_color_manual(values = c("darkblue","red","darkorange","darkred"), name="",
+                     #name="Withdrawals And Data Destruction" ,
+                     labels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destructions per 1K Consented Participants")) +
+  scale_y_continuous(name="# Withdrawals and \nData Destruction Requests", limits=c(0,max_y.refwd.kp),
+                     breaks=c(0,break.rfwd.kp),sec.axis = sec_axis( ~ .  , name = "Withdrawals/Data Destructions \nper 1K Consented",breaks=c(0,break.rfwd.kp),labels = scales::number_format(accuracy = 0.1))) +
+   coord_cartesian(ylim =c(0,max_y.refwd.kp)) +
+  scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
+  ggtitle(paste("Cumulative Withdrawals and Data Destructions \nby Number of Consented Participants Through\n", currentDate,note,sep=" "))+
+  theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
+         axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
+         plot.title = element_text(face="bold", size=16),
+         # Remove panel border
+         panel.border = element_blank(),  
+         # Remove panel grid lines
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(),
+         # Remove panel background
+         panel.background = element_blank(),
+         # Add axis line
+         axis.line = element_line(colour = "grey") ,
+         ##put the legend in the plot
+         legend.position = "bottom"
+  )  
+print(rfwd.cum.plot.kp)
+ }
 ```
 
 
@@ -3533,7 +3669,8 @@ Table7b_pro_pas %>% kable_styling(latex_options = "scale_down")
 
 Table8_profile  %>% kable_styling(latex_options = "scale_down")
 
-table9_verifiedtype %>% kable_styling(font_size = 9) %>% kable_styling(latex_options = "scale_down") %>%  footnote(general="KP sites not yet sending data for Manual Verification and Outreach category.",general_title = "Note:",footnote_as_chunk = T) %>% landscape() 
+table9_verifiedtype %>% kable_styling(font_size = 9) %>% kable_styling(latex_options = "scale_down") 
+#%>%  footnote(general="KP sites not yet sending data for Manual Verification and Outreach category.",general_title = "Note:",footnote_as_chunk = T) %>% landscape() 
 
 table10 %>% kable_styling(latex_options = "scale_down")
 
@@ -3586,55 +3723,55 @@ Srvbiospe.All%>% kable_styling(latex_options = c("scale_down")) %>% landscape()%
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.1'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
  #HP
-  print(plot.ref[[1]])
+  print(plot.const[[1]])
 ```
 
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.2'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
-   print(plot.ref[[2]])
+   print(plot.const[[2]])
  #HFHS
 ```
  
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.3'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
-   print(plot.ref[[3]])
+   print(plot.const[[3]])
  #MFH
 ```
  
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.4'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
-  print(plot.ref[[4]])
+  print(plot.const[[4]])
  #SF
 ```
  
 ```{r,eval=TRUE,echo=FALSE,fig.cap='Figure 5.5'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
  #UOC
-  print(plot.ref[[5]])
+  print(plot.const[[5]])
 ```
  
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.6'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
  #KPCO
- print(plot.ref[[6]])
+ print(plot.const[[6]])
 ```
  
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.7'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
  #KPGA
- print(plot.ref[[7]])
+ print(plot.const[[7]])
 ```
  
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.8'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
  #KPHI
- print(plot.ref[[8]])
+ print(plot.const[[8]])
 ```
  
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.9'}
  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
   #KPNW
-  print(plot.ref[[9]])
+  print(plot.const[[9]])
 ```
 
 ```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.10'}
@@ -3643,48 +3780,64 @@ Srvbiospe.All%>% kable_styling(latex_options = c("scale_down")) %>% landscape()%
  print(rfwd.cum.plot)
 ```
  
-```{r, eval=TRUE,echo=FALSE,fig.cap='Figures 5.11',results='asis'}
- for (KP in c(0,1)){
-   dt <- recrui_wk_verified1.kp %>% filter(., KPgroups==KP)
-   note <- if(KP==1){"KPs & UChicago"}
-             else{
-              "HP, HFH, SF, MF"
-             }
-  #print(note)
-  max_y.refwd.kp <- 10*ceiling(max(dt$total_wdconsent.cum.kp)/10)
-  break.rfwd.kp <- seq(ceiling(max(dt$total_wdconsent.cum.kp)/10),max_y.refwd,ceiling(max(dt$total_wdconsent.cum.kp)/10))
-  rfwd.cum.plot.kp <- filter(dt,as.Date(Week.Sunday.date) < currentDate) %>%  gather(refwd_type,value.cum, total_dtdestroy.cum.kp,total_wdconsent.cum.kp) %>% 
-            select(Week.Sunday,Week.Sunday.date,refwd_type,value.cum) %>% 
-   mutate(type=case_when(#refwd_invite=="new.refwd.rate" ~"# Withdrawal per 1K invitations",
-                         refwd_type=="total_wdconsent.cum.kp" ~"Withdrawals Only",
-                         refwd_type=="total_dtdestroy.cum.kp" ~"Data Destruction Only"),
-          type = factor(type,levels=c("Withdrawals Only","Data Destruction Only"))) %>% 
- ggplot(aes(y=value.cum,x=as.Date(Week.Sunday.date),color=type)) + 
-   geom_line() +  geom_point() + scale_color_manual(values = c("darkorange","darkred"), name="",
-                      #name="Withdrawals And Data Destruction" ,
-                      labels=c("Withdrawals Only","Data Destruction Only"))+
-   scale_y_continuous(name="# of Withdrawals And \nData Destruction Qequests", limits=c(0,max_y.refwd.kp),
-                      breaks=break.rfwd.kp) +
-    coord_cartesian(ylim =c(0,max_y.refwd.kp)) +
-   scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
-   ggtitle(paste("Cumulative Withdrawals and Data Destructions \nby Number of Verified Participants \nThrough", currentDate,note,sep=" "))+
-   theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
-          axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
-          plot.title = element_text(face="bold", size=16),
-          # Remove panel border
-          panel.border = element_blank(),  
-          # Remove panel grid lines
-          panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank(),
-          # Remove panel background
-          panel.background = element_blank(),
-          # Add axis line
-          axis.line = element_line(colour = "grey") ,
-          ##put the legend in the plot
-          legend.position = "bottom"
-   )  
- print(rfwd.cum.plot.kp)
- }
+```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.11'}
+#  for (KP in c(0,1)){
+#   dt <- filter(recr_consent.KP,KPgroups==KP) 
+#   
+#   note <- if(KP==1){
+#     "KPs & UChicago"
+#     }else{
+#              "HP, HFH, SF, MF" 
+#      }
+#   
+#  
+# #print(note)
+#  max_y.refwd.kp <- 10*ceiling(max(dt$total_wdconsent.cum.kp)/10)
+#  break.rfwd.kp <- seq(0,max_y.refwd,ceiling(max(dt$total_wdconsent.cum.kp)/10))
+#  
+#  rfwd.cum.plot.kp <- dt %>%  gather(refwd_type,value.cum, total_dtdestroy.cum.kp,total_wdconsent.cum.kp,ratio_wd_consent,ratio_ddest_consent) %>% 
+#            select(KPgroups,Week.Sunday,Week.Sunday.date,refwd_type,value.cum) %>% 
+#   mutate(type=case_when(refwd_type=="ratio_wd_consent" ~"Withdrawals per 1K Consented Participants",
+#                         refwd_type=="ratio_ddest_consent" ~"Data Destructions per 1K Consented Participants",
+#                         refwd_type=="total_wdconsent.cum.kp" ~"Withdrawals Only",
+#                         refwd_type=="total_dtdestroy.cum.kp" ~"Data Destructions"),
+#          type = factor(type,levels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destructions per 1K Consented Participants"))) %>%
+# ggplot(aes(y=value.cum,x=as.Date(Week.Sunday.date),color=type)) + 
+#   geom_line() +  geom_point() + scale_color_manual(values = c("darkblue","red","darkorange","darkred"), name="",
+#                      #name="Withdrawals And Data Destruction" ,
+#                      labels=c("Withdrawals Only","Data Destructions","Withdrawals per 1K Consented Participants","Data Destructions per 1K Consented Participants")) +
+#   scale_y_continuous(name="# Withdrawals and \nData Destruction Requests", limits=c(0,max_y.refwd.kp),
+#                      breaks=c(0,break.rfwd.kp),sec.axis = sec_axis( ~ .  , name = "Withdrawals/Data Destructions \nper 1K Consented",breaks=c(0,break.rfwd.kp),labels = scales::number_format(accuracy = 0.1))) +
+#    coord_cartesian(ylim =c(0,max_y.refwd.kp)) +
+#   scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
+#   ggtitle(paste("Cumulative Withdrawals and Data Destructions \nby Number of Consented Participants Through\n", currentDate,note,sep=" "))+
+#   theme( axis.text.x=element_text(angle=60, hjust=1), axis.title.x = element_text( size = 14, face = "bold") ,
+#          axis.title.y = element_text(size = 14, face = "bold",color="black",angle=90),
+#          plot.title = element_text(face="bold", size=16),
+#          # Remove panel border
+#          panel.border = element_blank(),  
+#          # Remove panel grid lines
+#          panel.grid.major = element_blank(),
+#          panel.grid.minor = element_blank(),
+#          # Remove panel background
+#          panel.background = element_blank(),
+#          # Add axis line
+#          axis.line = element_line(colour = "grey") ,
+#          ##put the legend in the plot
+#          legend.position = "bottom"
+#   )  
+# print(rfwd.cum.plot.kp)
+# }
+
+dt <- filter(recr_consent.KP,KPgroups==0) 
+note <- "HP, HFH, SF, MF"
+refwd.cumplot(dt,note)
+```
+
+```{r, eval=TRUE,echo=FALSE,fig.cap='Figure 5.12'}
+dt <- filter(recr_consent.KP,KPgroups==1) 
+note <- "KPs & UChicago"
+refwd.cumplot(dt,note)
 ```
 
 \pagebreak
@@ -3802,7 +3955,7 @@ knitr::kable(Table43b_awaresreasons[,c(13,3:12),],caption = 'Table 43. How Recru
 table44_Totalactivecamp %>% kable_styling(latex_options = "scale_down")%>% landscape()
 
 #colnames(campaign.combo)[2:17] <- sapply(strsplit(colnames(campaign.combo)[2:17],"_"),tail,1)
-colnames(campaign.combo0)[2:21] <- sapply(strsplit(colnames(campaign.combo)[2:21],"_"),tail,1)
+#colnames(campaign.combo0)[2:21] <- sapply(strsplit(colnames(campaign.combo)[2:21],"_"),tail,1)
 knitr::kable(as.data.frame(campaign.combo0[ ,c(1:9,16:17,20,21,18:19,14:15,12,13,10,11,22)]),caption = 'Table 45. Success Rate by Campaign Type for Active Recruits',row.names=FALSE, booktabs = T, linesep = "", format.args = list(big.mark = ","), align = c("l", "c", "c","c", "c", "c", "c", "c", "c", "c", "c","c", "c", "c", "c", "c", "c","c","c","c","c","c"), col.names=c("Site","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Total Active Recruits")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:9)) %>% add_header_above(c(" " = 1, "Aging out of Study" = 2, "Demographic Group" = 2, "Geographic Group"=2, "Non-Screening Appointment" =2, "Random" = 2, "Screening Appointment" = 2, "Research Registry" =2, "Pop up" =2, "Other" = 2,"None of These Apply" = 2, " "=1)) %>% landscape() %>% footnote(general='Frequency (%) of Total Active Recruits of each Campaign Type by Site',general_title = "Note:", footnote_as_chunk = T)
 
 
@@ -3881,26 +4034,24 @@ table62_sexall %>% kable_styling(latex_options = "scale_down")%>% footnote(gener
 ```
 
 
-
-
 ```{r,echo=FALSE,include=FALSE}
 library(usethis)
 ##to get the refusal and withdrawl data
 currentDate <- Sys.Date()
 box_auth(client_id =Sys.getenv("BOX_CLIENT_ID"),
          client_secret =Sys.getenv("BOX_CLIENT_SECRET"))
-# box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-#           client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
-box_setwd(dir_id = 167284102961)
+# # box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
+# #           client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
+# box_setwd(dir_id = 167284102961)
 
 
-outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/"
-# ##to create a data of the particpants with previous cancer history among those user profile complete
+ outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/"
+# # ##to create a data of the particpants with previous cancer history among those user profile complete
 ca_hist$date <- currentDate
-write.csv(ca_hist[,c("date","token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","RcrtSI_TypeTime_v1r0","RcrtUP_SubmitTime_v1r0","Cancer Type","Cancer Comments","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], paste(outputpath,"prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""), row.names = F,na="")
+ write.csv(ca_hist[,c("date","token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","RcrtSI_TypeTime_v1r0","RcrtUP_SubmitTime_v1r0","Cancer Type","Cancer Comments","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], paste(outputpath,"prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""), row.names = F,na="")
 
-# box_setwd(dir_id=191948877738)
-# box_write(object = ca_hist[,c("date","token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","RcrtSI_TypeTime_v1r0","RcrtUP_SubmitTime_v1r0","Cancer Type","Cancer Comments","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], paste("prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""),row.names = F,na="")
+ # box_setwd(dir_id=191948877738)
+ # box_write(object = ca_hist[,c("date","token","Connect_ID","site", "age","sex", "race","Verification status","Recruitment type","User Profile submitted","RcrtSI_TypeTime_v1r0","RcrtUP_SubmitTime_v1r0","Cancer Type","Cancer Comments","Previous Cancer","Cancer Year","RcrtV_CStatusMatch_v1r0")], paste("prod_previous_cancer_cases_profile_complete_",currentDate,".csv",sep=""),row.names = F,na="")
 
 # # 
 
@@ -4022,7 +4173,7 @@ currentDate <- Sys.Date()
 
 #box_write(object = refwd.cases.notes[,which(!grepl("Date",colnames(refwd.cases.notes)))], file_name =paste("RefusalWithdrawl_cases_",currentDate,".csv",sep=""),row.names = F,na="")
 
- write.csv(refwd.cases.notes[,which(!grepl("Date",colnames(refwd.cases.notes)))],paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/prod_refusal_withdrawl_cases_",currentDate,".csv",sep=""),row.names = F,na="")
+ write.csv(refwd.cases.notes[,which(!grepl("Date",colnames(refwd.cases.notes)))],paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/RefusalWithdrawl_Allcases_",currentDate,".csv",sep=""),row.names = F,na="")
 
  levels=c("HealthPartners", "Henry Ford Health System","Marshfield Clinic Health System", "Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado", "Kaiser Permanente   Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest")
 
@@ -4036,32 +4187,32 @@ for (i in 1:length(levels(refwd.cases.notes$site))) {
   write.csv(refwd.cases.notes[which(refwd.cases.notes$site == levels(refwd.cases.notes$site)[i]),which(!grepl("Date",colnames(refwd.cases.notes)))],paste(outputpath,"RefusalWithdrawl_cases_",levels(refwd.cases.notes$site)[i],currentDate,".csv",sep=""),row.names = F,na="")
 }
 
-box_setwd(dir_id=141622949146)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "HealthPartners"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=141623034772)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Henry Ford Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Henry_Ford_ Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=141623623841)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Marshfield Clinic Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Marshfield_ Clinic_Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=141622125003)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Sanford Health"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Sanford_ Health_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=141623855895)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "University of Chicago Medicine"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_University_of_ Chicago_Medicine_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=,142482879711)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Colorado"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Colorado_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=,142480938244)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Georgia"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=142481904303)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Hawaii"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser _Permanente_Hawai_",currentDate,".csv",sep=""),row.names = F,na="")
-
-box_setwd(dir_id=142481813411)
-box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Northwest"), which(!grepl("Date",colnames(refwd.cases.notes)))], file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Northwest_", currentDate, ".csv",sep=""),row.names = F,na="")
+# box_setwd(dir_id=141622949146)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "HealthPartners"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=141623034772)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Henry Ford Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Henry_Ford_ Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=141623623841)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Marshfield Clinic Health System"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Marshfield_ Clinic_Health_System_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=141622125003)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Sanford Health"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Sanford_ Health_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=141623855895)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "University of Chicago Medicine"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_University_of_ Chicago_Medicine_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=,142482879711)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Colorado"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Colorado_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=,142480938244)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Georgia"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_HealthPartner_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=142481904303)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Hawaii"), which(!grepl("Date",colnames(refwd.cases.notes)))],file_name=paste("RefusalWithdrawl_cases_Kaiser _Permanente_Hawai_",currentDate,".csv",sep=""),row.names = F,na="")
+# 
+# box_setwd(dir_id=142481813411)
+# box_write(object = refwd.cases.notes[which(refwd.cases.notes$site == "Kaiser Permanente Northwest"), which(!grepl("Date",colnames(refwd.cases.notes)))], file_name=paste("RefusalWithdrawl_cases_Kaiser_ Permanente_Northwest_", currentDate, ".csv",sep=""),row.names = F,na="")
 
 
 
@@ -4182,11 +4333,11 @@ box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
 
 box_setwd(dir_id = 167284102961)
  
- box_write(object = incentive[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_UChicago",currentDate,".csv",sep=""))
+ #box_write(object = incentive[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_UChicago",currentDate,".csv",sep=""))
 
 write.csv(incentive[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")],paste(outputpath,"Incentives_Weekly_Report_UChicago_",currentDate,".csv", sep=""),na="",row.names=F)
 
-box_write(object = incentive_nonchi[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_NORC_",currentDate,".csv",sep=""))
+#box_write(object = incentive_nonchi[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")], file_name =paste("Incentives_Weekly_Report_NORC_",currentDate,".csv",sep=""))
 
 write.csv(incentive_nonchi[,c("token","site","NORC.Payment.Eligibility","Eligible.for.Payment","Time.Payment.Eligible.for.Round")],paste(outputpath,"Incentives_Weekly_Report_NORC_",currentDate,".csv", sep=""),na="",row.names=F)
 
@@ -4776,3 +4927,5 @@ for(i in 1:length(site)){
 }  
 
 ```
+
+
