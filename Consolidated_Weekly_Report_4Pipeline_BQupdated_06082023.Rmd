@@ -3082,7 +3082,11 @@ recr_veri_wk <-  merge(recrui_wk_verified,veri_wk_activie, by.x=c("Week.Sunday",
 
 ##to plot the time trend of invitation, verified, and blood+surveys by week
 vars <- c("active_recruits", "total_verifieds","total_eligible","total_dtdestroy","total_wdconsent","total_allacts")
+<<<<<<< HEAD
 recr_veri_act <- recr_veri_wk[which(recr_veri_wk$Week.Sunday.date < currentDate),] %>% select(Week.Sunday,Week.Sunday.date,all_of(vars))  %>% 
+=======
+recr_veri_act <- recr_veri_wk %>% select(Week.Sunday,Week.Sunday.date,all_of(vars))  %>% 
+>>>>>>> d55e8ecac2695a6d997128115b03a7fcf693deb1
   mutate((across(all_of(vars),~replace_na(., 0)))) %>%
   mutate(across(all_of(vars), ~as.numeric(.)),
          #new.refwd.rate=ifelse(!is.na(total_wdconsent) & active_recruits !=0, 1000*total_wdconsent/active_recruits,0),
@@ -3115,7 +3119,11 @@ breaks0 <- seq(0,100*round(max_y0/100,0),100)
 Fig4.timetrend <- ggplot(recr_veri_act_wk,aes(y=Verified_Activities_n1,x=as.Date(Week.Sunday.date),color=verified.activities)) + 
   geom_line() +  geom_point() + scale_color_manual(values = c("blue","purple","lightblue"), name="",
                     labels=c("Verified","Survey+Blood","Invitations"))+
+<<<<<<< HEAD
   scale_y_continuous(name="# Individuals Verified or \nCompleted Study Activities", limits=c(0,max_y0),breaks=breaks0,labels = scales::label_comma(),sec.axis = sec_axis( ~ . *10 , name = "# Invitations",breaks=10*breaks0,labels = scales::label_comma(),)) +
+=======
+  scale_y_continuous(name="# Individuals Verified or \nCompleted Study Activities", limits=c(0,max_y0),breaks=breaks0,labels = scales::label_comma(),sec.axis = sec_axis( ~ . *100 , name = "# Invitations",breaks=100*breaks0,labels = scales::label_comma(),)) +
+>>>>>>> d55e8ecac2695a6d997128115b03a7fcf693deb1
   coord_cartesian(ylim =c(0,max_y0)) +
   scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
   ggtitle(paste("Weekly Counts of Enrollment through Study Activity Completion \nthrough", currentDate,"Overall",sep=" "))+
@@ -3172,7 +3180,11 @@ Fig4.timetrend <- ggplot(recr_veri_act_wk,aes(y=Verified_Activities_n1,x=as.Date
 
 ###by site
 
+<<<<<<< HEAD
 recruit.wk.active.site <- recr_resp[which(recr_resp$d_512820379==486306141),] %>% mutate(site = Site) %>% arrange(site,Week.Sunday) %>%
+=======
+recruit.wk.active.site <- veri_resp[which(veri_resp$d_512820379==486306141),] %>% arrange(site,Week.Sunday) %>%
+>>>>>>> d55e8ecac2695a6d997128115b03a7fcf693deb1
   group_by(site,Week.Sunday,Week.Sunday.date) %>%
   dplyr::summarize(active_recruits=n(),
                    recruitdate_max=max(recru_time,rm.na=T))
@@ -3253,8 +3265,13 @@ recrui_wk_verified1.site <- recrui_wk_verified1.site %>%
    
     
     act.plot <- ggplot(dt.combo,mapping=aes(y=Verified_Activities_n1,x=as.Date(Week.Sunday.date),color=verified.activities)) + geom_line() + geom_point()+
+<<<<<<< HEAD
       scale_color_manual(values = c("lightblue","purple","blue"), name="",
                     labels=c("Invitations","Survey+Blood","Verified"))+
+=======
+      scale_color_manual(values = c("lightblue","blue","purple"), name="",
+                         labels=(c("Verified","Survey+Blood","Invitations")))+
+>>>>>>> d55e8ecac2695a6d997128115b03a7fcf693deb1
       scale_y_continuous(name="# Individuals Verified or \nCompleted Study Activities", limits=c(0,max_y0),breaks=break_y0, labels = scales::label_comma(), sec.axis = sec_axis( ~ . *10 , name = "# Invitations",breaks=10*break_y0,labels = scales::label_comma())) +
   coord_cartesian(ylim =c(0,max_y0)) +
       scale_x_date(name="Date",limit=as.Date(c("2021-12-31",currentDate)),date_labels = "%y-%m-%d", date_breaks = "2 weeks",expand=c(0,0))  +
@@ -3856,9 +3873,15 @@ refwd.cumplot(dt,note)
 #   knitr::kable("latex",caption='Table 34. Refusals and Withdrawals Among All Consented Participants', row.names=FALSE, format.args = list(big.mark = ","), col.names = linebreak(names(refuse.withdrawls_w2), align = "l"), align=c("l","l","l","l","l","l","l"), booktabs = TRUE, linesep = "") %>% kable_styling(latex_options = c("scale_down"),full_width = F) %>% add_indent(c(1:9)) %>% footnote(general='% of the Total Consented Participants by Site',  general_title = "Note:",footnote_as_chunk = T)
 
 tb_refwd %>% kable_styling(latex_options = c("scale_down"),full_width = F) %>%  footnote(general='% of the Total Consented Participants by Site',  general_title = "Note:",footnote_as_chunk = T)
+<<<<<<< HEAD
  
  knitr::kable(ref_wd_reasons_all1[,c(12,2:11)],caption='Table 35. Reasons for Refusal or Withdrawal Among Those That Requested',caption.short = "Reasons for Refusal/Withdrawl.", row.names=FALSE,align=c("l","c","c","c","c","c","c","c","c","c")) %>% kable_styling(latex_options = c("scale_down"))%>% add_indent(c(1:25)) %>%landscape() %>% footnote(general = c('Total counts of refusal and withdrawal reasons are not equal to the total numbers of refusal and withdrawal cases','Frequency %  is the counts  of refusal and withdrawal cases with Refusal and withdrawal reason out of the total numbers of refusal and withdrawal cases by site'),  general_title = "Note:",footnote_as_chunk = T)
  
+=======
+ 
+ knitr::kable(ref_wd_reasons_all1[,c(12,2:11)],caption='Table 35. Reasons for Refusal or Withdrawal Among Those That Requested',caption.short = "Reasons for Refusal/Withdrawl.", row.names=FALSE,align=c("l","c","c","c","c","c","c","c","c","c")) %>% kable_styling(latex_options = c("scale_down"))%>% add_indent(c(1:24)) %>%landscape() %>% footnote(general = c('Total counts of refusal and withdrawal reasons are not equal to the total numbers of refusal and withdrawal cases','Frequency %  is the counts  of refusal and withdrawal cases with Refusal and withdrawal reason out of the total numbers of refusal and withdrawal cases by site'),  general_title = "Note:",footnote_as_chunk = T)
+ 
+>>>>>>> d55e8ecac2695a6d997128115b03a7fcf693deb1
 ###Tables on Incentive part by UoC and NORC and biospecimen donations
 #Till now no incentive payments have been issued to the eligible participants in UoC site
 
@@ -3965,11 +3988,19 @@ table44_Totalactivecamp %>% kable_styling(latex_options = "scale_down")%>% lands
 knitr::kable(as.data.frame(campaign.combo0[ ,c(1:9,16:17,20,21,18:19,14:15,12,13,10,11,22)]),caption = 'Table 45. Success Rate by Campaign Type for Active Recruits',row.names=FALSE, booktabs = T, linesep = "", format.args = list(big.mark = ","), align = c("l", "c", "c","c", "c", "c", "c", "c", "c", "c", "c","c", "c", "c", "c", "c", "c","c","c","c","c","c"), col.names=c("Site","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Verified","Response Rate","Total Active Recruits")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:9)) %>% add_header_above(c(" " = 1, "Aging out of Study" = 2, "Demographic Group" = 2, "Geographic Group"=2, "Non-Screening Appointment" =2, "Random" = 2, "Screening Appointment" = 2, "Research Registry" =2, "Pop up" =2, "Other" = 2,"None of These Apply" = 2, " "=1)) %>% landscape() %>% footnote(general='Frequency (%) of Total Active Recruits of each Campaign Type by Site',general_title = "Note:", footnote_as_chunk = T)
 
 
+<<<<<<< HEAD
 knitr::kable(optout_pct[,c(1,2,3,4)],caption = 'Table 46. Total Number of Pre-Consent Opt-Outs by Site',col.names=c("Site","Total Opt-Outs", "Percent %", "Total Active Recruits"), format.args = list(big.mark = ","), row.names=FALSE, align=c("l","c","c","c")) %>% add_indent(c(1:9)) %>% footnote(general='Frequency (%) of Overall Active Recruits of Connect.',general_title = "Note:", footnote_as_chunk = T)
 
 Table47_precst_act1 
 
 knitr::kable(Table48_optreasons[,c(2:12),],caption = 'Table 48. Pre-Consent Opt-Out Reasons Among Those That Opted Out', row.names=FALSE, align=c("l", "c", "c","c", "c", "c", "c", "c", "c", "c","c","c"))%>%  kable_styling(latex_options = "scale_down") %>% add_indent(c(2:nrow(Table48_optreasons)-1)) %>% landscape() %>% footnote(general='Frequency (%) of Total Opt-Outs by Site',general_title = "Note:", footnote_as_chunk = T)
+=======
+knitr::kable(optout_pct[,c(1,2,3,4)],caption = 'Table 46. Total Number of Pre-Consent Opt-Outs by Site',col.names=c("Site","Total Opt-Outs", "Percent %", "Total Active Recruits"), format.args = list(big.mark = ","), row.names=FALSE, align=c("l","c","c","c")) %>% add_indent(c(1:9)) %>% footnote(general=c('Frequency (%) of Overall Active Recruits of Connect.','KP not yet sending Opt-Out data'),general_title = "Note:", footnote_as_chunk = T)
+
+Table47_precst_act1 
+
+knitr::kable(Table48_optreasons[,c(2:12),],caption = 'Table 48. Pre-Consent Opt-Out Reasons Among Those That Opted Out', row.names=FALSE, align=c("l", "c", "c","c", "c", "c", "c", "c", "c", "c","c","c"))%>%  kable_styling(latex_options = "scale_down") %>% add_indent(c(2:nrow(Table48_optreasons)-1)) %>% landscape() %>% footnote(general=c('KP sites are not currently sending data on opt-outs.','Frequency (%) of Total Opt-Outs by Site'),general_title = "Note:", footnote_as_chunk = T)
+>>>>>>> d55e8ecac2695a6d997128115b03a7fcf693deb1
 
 work_flow_a  %>% kable_styling(latex_options = "scale_down")
 
