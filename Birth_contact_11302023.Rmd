@@ -1,0 +1,172 @@
+---
+title: "NORC_birthdayCard_11302023"
+author: "JingWU"
+date: "2023-11-30"
+output: html_document
+# output:
+#   pdf_document:
+#     extra_dependencies:
+#     - float
+#     toc: yes
+#     toc_depth: 2
+#     keep_tex: yes
+#     fig_width: 10
+#     fig_height: 7
+#     fig_caption: yes
+#     latex_engine: xelatex
+#     df_print: paged
+
+header-includes: \usepackage[labelformat=empty]{caption}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(bigrquery)
+library(data.table) ###to write or read and data management 
+library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management https://tidyselect.r-lib.org/reference/faq-external-vector.html
+#library(dplyr) ###data management
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+#library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tidyr)
+library(tinytex) #for pdf
+library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+#library(summarytools) ##recommended not applied in this R code
+library(gmodels) ##recommended but not applied in this R code
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+#library(patchwork)
+library(rio)
+library(scales)
+```
+
+## R Markdown
+
+NORC will be sending birthday cards via snail mail on a monthly basis to our participants in their birth month.
+
+They will pull the information via API for all participants who are verified and not withdrawn and have birthdays in a given month.
+
+The variables they will need are:
+
+Connect ID
+Name (current first and last name from User Profile)
+Mailing address (current address from User Profile)
+Do not include the date of birth because we do not want to proliferate PII into their system. NORC will make the API call once a month, and we need to populate the list with people whose birthday is that month.
+
+Excluding those deceased (2 participants deceased till now in the participants table 11/30/2023)
+
+```{r, include=FALSE,eval=TRUE,echo=FALSE}
+options(knitr.table.format = "latex")
+currentDate <- Sys.Date()
+
+#dictionary <- rio::import("https://github.com/episphere/conceptGithubActions/blob/master/aggregate.json",format = "json")
+dictionary <- rio::import("https://episphere.github.io/conceptGithubActions/aggregateCopy.json",format = "json")
+dd <- dplyr::bind_rows(dictionary,.id="CID")
+#dd <- dd[!duplicated(dd),] #remove 140duplicates
+#THIS TABLE HAS REPLICATED (CIDS+LABELS) WITH DIFFERENT VARIABLE NAMES,
+dd$`Variable Label` <- ifelse(is.na(dd$`Variable Label`), dd$`Variable Name`, dd$`Variable Label`)
+#dd <- as.data.frame.matrix(do.call("rbind",dictionary)) #3523, some CID and labels are linked to different variable names 
+
+#dd1 <- dd[!duplicated(dd[,c("CID","Variable Label")]),]
+length(unique(dd$CID))
+#dd1 <- dd[!duplicated(dd[,c("CID","Variable Label")]),]
+length(unique(dd$CID))
+
+#the master dd with more info. on the formats (levels)
+urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github
+y <- read.csv(urlfile)
+#dd$labels.combo <- paste(dd$`Variable Label`,dd$`Variable Name`,sep="$")
+ bq_auth()
+#The bigrquery package is requesting access to your Google account.
+#Select a pre-authorised account or enter '0' to obtain a new token.
+#Press Esc/Ctrl + C to cancel.
+
+  2 
+  
+  project <- "nih-nci-dceg-connect-prod-6d04"
+  billing <- "nih-nci-dceg-connect-prod-6d04" ##project and billing should be consistent
+
+recr_var <- bq_project_query(project, query="SELECT * FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants_JP'")
+recrvar <- bigrquery::bq_table_download(recr_var,bigint = "integer64")
+recrvar_d <- recrvar[grepl("d_|D_",recrvar$column_name),]
+recrvar$last.CID <- ifelse(grepl("D_", recrvar$field_path), substring(sapply(strsplit(recrvar$field_path,"D_"),tail,1),1,9),
+                            ifelse(grepl("d_", recrvar$field_path), substring(sapply(strsplit(recrvar$field_path,"d_"),tail,1),1,9), NA))
+
+
+pii_cid <- y$conceptId.3[which(y$PII == "Yes")]
+recrvar_pii <- recrvar$column_name[which(recrvar$last.CID %in% pii_cid)]
+
+birthcontact <- y[(grepl("399159511|996038075|564964481|521824358|442166669|703385619|634434746|892050548|857217152", y$conceptId.3) | grepl("Verification Variable",y$Current.Question.Text)),]
+birth.vars <- recrvar[grepl(paste(birthcontact$conceptId.3,collapse = "|"), recrvar$column_name),]
+
+select <- paste(birth.vars$column_name,collapse=", ")
+query <- bq_project_query(project, query=paste("SELECT Connect_Id, token, d_827220437, ", select, " FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` 
+WHERE d_821247024 = '197316935' and d_747006172 != '353358909' and d_987563196!= '353358909'",sep=""))
+
+birth <- bq_table_download(query, bigint="integer64",n_max = Inf, page_size = 5000)
+
+empty_columns <- colSums(is.na(birth) |birth == "") == nrow(birth)
+names(birth[,empty_columns])
+#[1] "d_569151507_d_399159511" "d_569151507_d_442166669" "d_569151507_d_634434746"
+#[4] "d_569151507_d_703385619" "d_569151507_d_892050548" "d_569151507_d_996038075"
+birth1 <- birth[!empty_columns]
+month <- sapply(strsplit(as.character(currentDate),"-"),"[")[2]
+
+birth1 <- birth1 %>% 
+  mutate(Site = case_when(d_827220437 == "531629870" ~"HealthPartners",
+                         d_827220437 == '548392715' ~ "Henry Ford Health System", 
+                         d_827220437 == '125001209' ~ "Kaiser Permanente Colorado", 
+                         d_827220437 == '327912200' ~ "Kaiser Permanente Georgia",
+                         d_827220437 == '300267574' ~ "Kaiser Permanente Hawaii",
+                         d_827220437 == '452412599' ~ "Kaiser Permanente Northwest", 
+                         d_827220437 == '303349821' ~ "Marshfield Clinic Health System",
+                         d_827220437 == '657167265' ~ "Sanford Health" , 
+                         d_827220437 == '809703864' ~ "University of Chicago Medicine" , 
+                         d_827220437  %in% c('517700004','13') ~ "National Cancer Institute",
+                         d_827220437 == '181769837' ~ "Other" ),
+         NORC = ifelse(d_827220437 =='809703864',"University of Chicago Medicine","NORC"))
+#RcrtSI_SignedIn_v1r0 RcrtCS_Consented_v1r0 RcrtUP_Submitted_v1r0  Rcrt_completion_v1r0 Rcrt_Verified_v1r
+
+birth1$Site <- factor(birth1$Site,exclude=NULL,
+                    levels=c("HealthPartners", "Henry Ford Health System","Marshfield Clinic Health System",
+                             "Sanford Health", "University of Chicago Medicine","Kaiser Permanente Colorado",
+                             "Kaiser Permanente Georgia","Kaiser Permanente Hawaii","Kaiser Permanente Northwest",
+                             "National Cancer Institute","Other"))
+
+
+birth2 <- birth1 %>% mutate(`Last Name` = d_996038075,
+                            'First Name' = d_399159511,
+                            `DOB Month`= d_564964481, 
+                            `Address Line 1` = d_521824358,
+                            `Address Line 2` = d_442166669,
+                            `City`= d_703385619,
+                            `State`=d_634434746,
+                            `Zip` = d_892050548,
+                            'First Name Match'=state_d_147176963,
+                            `Last Name Match`=state_d_557461333,
+                            `Zip Match`=state_d_559534463,
+                            `Token Match`= state_d_679832994,
+                            `PIN Match`= state_d_711794630,
+                            `DOB Match`= state_d_725929722)
+birthday_card <- filter(birth2,d_564964481 == month & !grepl("Chicago",Site)) %>% select(Connect_Id,"Last Name","First Name","Address Line 1",`Address Line 2`,`City`,`State`,`Zip`)
+
+table(birth2$Site,birth2$d_564964481)
+
+write.csv("NORC_BirthdayCard_",currentDate,".csv")
+
+write.table("SELECT Connect_ID, token, d_564964481, d_996038075,d_399159511, d_521824358,d_442166669,d_703385619,d_635101039,d_892050548 FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` WHERE d_821247024 = '197316935' and d_564964481 = cast(EXTRACT(month FROM current_date()) as string) and d_747006172 != '353358909' and d_987563196 != '353358909' and d_827220437 !=  '809703864'","~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/BirthdayCard_query_11302023.txt", sep="\t",row.names = F,quote = F,col.names = F)
+```
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
