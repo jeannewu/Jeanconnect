@@ -162,6 +162,16 @@ table(birth2$Site,birth2$d_564964481)
 
 write.csv("NORC_BirthdayCard_",currentDate,".csv")
 
+month = sapply(strsplit(format(Sys.Date(), "%Y %B %b %m"), " "),"[")[2]
+
+box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
+         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm") 
+box_setwd(dir_id = 237829489634) 
+
+## the box foler Madhuri assigned in dev: https://gcc02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fnih.app.box.com%2Ffolder%2F237829489634%3Ftc%3Dcollab-folder-invite-treatment-b&data=05%7C01%7Cjing.wu2%40nih.gov%7C5b48809fed5849ea8e5808dbf2a4cab1%7C14b77578977342d58507251ca2dc2b06%7C0%7C0%7C638370561812949029%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000%7C%7C%7C&sdata=TLamALLrfxBl8x8NxGH4YLmcoph%2Bx5ryun178wurQd8%3D&reserved=0
+box_write(object =birthday_card,file_name=paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/CSV_file_for_",month,"_Birthday_Card_Recipients_2024.csv",sep=""),na="")
+
+
 write.table("SELECT Connect_ID, token, d_564964481, d_996038075,d_399159511, d_521824358,d_442166669,d_703385619,d_635101039,d_892050548 FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` WHERE d_821247024 = '197316935' and d_564964481 = cast(EXTRACT(month FROM current_date()) as string) and d_747006172 != '353358909' and d_987563196 != '353358909' and d_827220437 !=  '809703864'","~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/BirthdayCard_query_11302023.txt", sep="\t",row.names = F,quote = F,col.names = F)
 ```
 
