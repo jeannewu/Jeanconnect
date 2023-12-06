@@ -1,6 +1,7 @@
 ---
 title: "BQ2_table_SQL_10312023"
 format: html
+        embed-resources: true
 editor: visual
 ---
 
@@ -13,6 +14,7 @@ Quarto enables you to weave together content and executable code into a finished
 When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
 
 ```{r}
+currentDate <- Sys.Date()
 library(bigrquery)
 library(data.table)
 library(boxr)
@@ -29,7 +31,10 @@ library(arsenal)
  outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/"
  urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github
  y <- read.csv(urlfile)
- 
+ bq_auth()
+   project <- "nih-nci-dceg-connect-prod-6d04"
+  billing <- "nih-nci-dceg-connect-prod-6d04" ##project and billing should be consistent
+  
  recr_var <- bq_project_query(project, query="SELECT * FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants_JP'")
  recrvar <- bigrquery::bq_table_download(recr_var,bigint = "integer64")
  recrvar_d <- recrvar[grepl("d_|D_",recrvar$column_name),]
@@ -41,10 +46,10 @@ library(arsenal)
  recrvar_pii <- recrvar$column_name[which(recrvar$last.CID %in% pii_cid)] 
  parts_vars <- recrvar$column_name[which(recrvar$column_name %nin% recrvar_pii)]
  txt = paste(recrvar_pii, collapse = ",")
- select <- paste(parts_vars,collapse=",")
+ select <- paste(parts_vars,collapse=",\n")
  query=paste("SELECT", select,"FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` Where d_512820379 = '197316935' )",sep=" ")
  
-# write.table(query,file=paste(outputpath,"Query_parts_verified_",currentDate,".txt",sep=""))
+ write.table(query,file=paste(outputpath,"Query_parts_verified_",currentDate,".txt",sep=""))
  con <- dbConnect(
    bigrquery::bigquery(),
    project = project,
@@ -83,7 +88,7 @@ library(arsenal)
  }
 
  #[1] "bioSurvey_v1_JP" "0"
- #[1] "biospecimen_JP" "90" 
+ #[1] "biospecimen_JP" "90" #updated 12/5/2023 1
 # [1] "boxes_JP" "0"
  #[1] "clinicalBioSurvey_v1_JP" "0"
  #[1] "covid19Survey_v1_JP" "0"  
@@ -106,19 +111,19 @@ library(arsenal)
 q_nopii <- c("bioSurvey_v1_JP","menstrualSurvey_v1_JP","covid19Survey_v1_JP","clinicalBioSurvey_v1_JP",
              "module3_v1_JP")
 s.ls <- c(1,4,5,6,11)
-query_dt <- array(data=NA,dim=c(length(q_nopii),2))
-k = 0
-for (dt in 1:length(q_nopii)){
-   x <- q_nopii[dt]
-   query <- paste("SELECT b.* FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",q_nopii[dt], "` b
-INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
-WHERE p.d_821247024 = '197316935'\"",sep="")
-  
-   k = k+1 
-   query_dt[k,] <- c(x,query)
-   
-
-}
+# query_dt <- array(data=NA,dim=c(length(q_nopii),2))
+# k = 0
+# for (dt in 1:length(q_nopii)){
+#    x <- q_nopii[dt]
+#    query <- paste("SELECT b.* FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",q_nopii[dt], "` b
+# INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
+# WHERE p.d_821247024 = '197316935' and p.d_747006172 != '353358909'\"",sep="")
+#   
+#    k = k+1 
+#    query_dt[k,] <- c(x,query)
+#    
+# 
+# } # this set of sql code are too simple as *, which are not recommended.
 
 
 for (i in c(1,4,5,6,11)){
@@ -126,16 +131,41 @@ for (i in c(1,4,5,6,11)){
    table <- unique(schema[[i]]$table_name)
    sql <- paste("SELECT b.",select,"\np.Connect_ID) FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",table,"` b
 INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
-WHERE p.d_821247024 = '197316935'\"",sep="")
-   write.table(sql,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",table,"_BQ2query_11232023.txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F)
+WHERE p.d_821247024 = '197316935' and p.d_747006172 != '353358909'\"",sep="")
+  # write.table(sql,paste("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",table,"_BQ2query_11232023.txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F)
 }
 
 ###for the data with PII
-
+for (i in c(1:length(schema))){
+  dt <- as.data.frame(schema[[i]])
+  print(c(i, unique(dt$table_name)))
+}
+# [1] "1"               "bioSurvey_v1_JP"
+# [1] "2"              "biospecimen_JP"
+# [1] "3"        "boxes_JP"
+# [1] "4"                       "clinicalBioSurvey_v1_JP"
+# [1] "5"                   "covid19Survey_v1_JP"
+# [1] "6"                     "menstrualSurvey_v1_JP"
+# [1] "7"             "module1_v1_JP"
+# [1] "8"             "module1_v2_JP"
+# [1] "9"             "module2_v1_JP"
+# [1] "10"            "module2_v2_JP"
+# [1] "11"            "module3_v1_JP"
+# [1] "12"            "module4_v1_JP"
+# [1] "13"               "notifications_JP"
+# [1] "14"              "participants_JP"
+# [1] "15"                    "participants_noPII_JP"
 ##specific for the modules with two versions of data based on the M1_version_combined_05022023.R
-dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% V1_only_vars)]
+schem_m1_v1 <- schema[[7]]
+schem_m1_v2 <- schema[[8]]
+
+var.matched <- schem_m1_v1$column_name[which(schem_m1_v1$column_name %in% schem_m1_v2$column_name)]
+V1_only_vars <- schem_m1_v1$column_name[which(schem_m1_v1$column_name %nin% m1_common.vars)]
+V2_only_vars <- schem_m1_v2$column_name[which(schem_m1_v2$column_name %nin% m1_common.vars)]
+
+v1_only_pii <- dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% V1_only_vars)]
 #[1] "D_537137982_14_14_D_338020179_14" "D_537137982_20_20_D_338020179_20" "D_537137982_13_13_D_338020179_13"
-dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% V2_only_vars)]
+v2_only_pii <- dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% V2_only_vars)]
 #  [1] "D_537137982_10_10_D_338020179_10_10" "D_537137982_11_11_D_338020179_11_11" "D_537137982_6_6_D_338020179_6_6"    
 #  [4] "D_537137982_7_7_D_338020179_7_7"     "D_537137982_8_8_D_338020179_8"       "D_537137982_8_8_D_338020179_8_8"    
 #  [7] "D_537137982_9_9_D_338020179_9"       "D_537137982_9_9_D_338020179_9_9"     "D_537137982_3_3_D_338020179_3_3"    
@@ -143,7 +173,7 @@ dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% V2_only_vars)]
 # [13] "D_537137982_14_14_D_338020179_14_14" "D_537137982_15_15_D_338020179_15_15" "D_537137982_16_16_D_338020179_16_16"
 # [16] "D_537137982_17_17_D_338020179_17_17" "D_537137982_2_2_D_338020179_2_2"     "D_537137982_1_1_D_338020179_1_1"    
 # [19] "D_537137982_10_10_D_338020179_10"    "D_537137982_5_5_D_338020179_5_5"
-unique(dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% var.matched)])
+common_pii <- unique(dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% var.matched)])
 #  [1] "D_150344905"                     
 #  [2] "D_641651634_D_173508724"         
 #  [3] "D_233198706"                     
@@ -171,7 +201,49 @@ unique(dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% var.matched)])
 # [25] "D_857915436_D_907038282"         
 # [26] "D_857915436_D_970839481"         
 # [27] "D_988878019"   
+
+write.table(paste(var.matched,collapse=",\n"),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1_common_variables_11162023.txt", sep="\t",row.names = F,quote = F)
+write.table(paste(V1_only_vars,collapse=", \nv1."),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1_V1only_variables_11162023.txt", sep="\t",row.names = F,quote = F,col.names = F)
+write.table(paste(V2_only_vars,collapse=", \nv2."),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M2_V1only_variables_11162023.txt", sep="\t",row.names = F,quote = F,col.names=F)
+
+#to write the sql code:
+selectm1_dup <- paste(var.matched[which(var.matched %nin% common_pii)],collapse=",\n")
+select_m1v1_only <- paste(V1_only_vars[which(V1_only_vars %nin% v1_only_pii)],collapse=", \nv1.")
+select_m1v2_only <- paste(V2_only_vars[which(V2_only_vars %nin% v2_only_pii)],collapse=", \nv1.")
+  
+write.table(paste("With m1_dup as\n
+(SELECT ",selectm1_dup,"2 as version 
+From `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`\n
+UNION ALL
+Select\n",selectm1dup,"1 as version 
+From `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v1_JP`
+Connect_ID not in ('7154937817','2801868875','6490089737','2503474663','8381653219','9981369134','5733067482','8903103822','4670161070','6480399310','1322312513','8455823558','5770553465','9325568364','8048162478','6442875968','9425034222','8930825906','1448181276','7666852403','1137648664','4887607966','9050790502','9965993182','4178910664','1035842173','7812456818','5961056153','8824377567','3977547925','4491438652','3934969608','7074192548','4981641476','3012249625','1254510349','2434106769','1596738642','2225741914','7268730494','9708950713','2980632837','3192425824','9529174240','9484125194','6330599580','1745183594','3202201265','7378395603','5028262383','6830758400','7996726682','6795636698','4853507897','6698262334','9007620392','3983492332','8959852505','4249216023','8158275604','6657539133','7041419170','3947545619','6765397284','3124201981','9904077888','7857043877','6943407333')
+)\n
+SELECT dup.*,",select_m1v1_only,",\n",select_m1v2_only,",\np.Connect_ID 
+From m2_dup as dup
+left join
+`nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v1_JP` as v1
+on dup.Connect_ID = v1.Connect_ID
+left JOIN	
+`nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP` as v2
+ON v2.Connect_ID = coalesce(dup.Connect_ID,v1.Connect_ID)\n
+INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` as p
+ON coalesce(dup.Connect_ID, v1.Connect_ID, v2.Connect_ID) = p.Connect_ID
+WHERE p.d_821247024 = '197316935' and p.d_747006172 != '353358909'",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data//M1_merged_BQ2query_11232023.txt", sep="\t",row.names = F,quote = F,col.names = F)
+
+pii <- paste(dt_pii_dd$column_name[which(dt_pii_dd$table_name =="module4_v1_JP")],collapse = ",")
+schem_m4 <-  schema[[12]]
+m4_vars.nopii <- schem_m4$column_name[which(schem_m4$column_name %nin% pii)]
+select_m4 <- paste(m4_vars.nopii,collapse=", \nm4.")
+query <- paste("SELECT m4.",select_m4,") FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module4_v1_JP` b
+INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
+WHERE p.d_821247024 = '197316935'\"",sep="")
+
+write.table(paste("SELECT m4.",select_m4,"\np.Connect_ID) FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module4_v1_JP` b
+INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
+WHERE p.d_821247024 = '197316935'\"",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M4_BQ2query_11232023.txt", sep="\t",row.names = F,quote = F,col.names = F)
 # to get the merged M2 query
+
 schem_m2_v1 <- schema[[9]]
 schem_m2_v2 <- schema[[10]]
 
@@ -192,17 +264,44 @@ write.table(paste(m2_common.vars,collapse=",\n"),"~/Documents/Connect_projects/B
 write.table(paste(m2_v1.only,collapse=", \nv1."),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M2_V1only_variables_11202023.txt", sep="\t",row.names = F,quote = F,col.names = F)
 write.table(paste(m2_v2.only,collapse=", \nv2."),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M2_V2only_variables_11202023.txt", sep="\t",row.names = F,quote = F,col.names=F)
 
+select_dup <- paste(m2_common.vars,collapse=",\n")
+select_m2v1_only <- paste(m2_v1.only,collapse=", \nv1.")
+select_m2v2_only <- paste(m2_v2.only,collapse=", \nv1.")
+  
+write.table(paste("With m2_dup as\n
+(SELECT ",select_dup,"2 as version 
+From `nih-nci-dceg-connect-prod-6d04.FlatConnect.module2_v2_JP`\n
+UNION ALL
+Select\n",select_dup,"1 as version 
+From `nih-nci-dceg-connect-prod-6d04.FlatConnect.module2_v1_JP`
+WHERE Connect_ID not in ('9333929469', '5671051093', '8731246565', '3477605676', '8021087753', '8166039328', 
+'1105606613', '5118827628', '6547756854', '2774891615', '6367118302', '1996085198', '8016812218', '4505692375', 
+'8820522355', '2287983457', '4394283959', '1256197783', '1817817604', '3715901189', '9329247892', '8065823194', 
+'8134860443', '1015390716', '8799687034')
+)\n
+SELECT dup.*,",select_m2v1_only,",\n",select_m2v2_only,",\np.Connect_ID 
+From m2_dup as dup
+left join
+`nih-nci-dceg-connect-prod-6d04.FlatConnect.module2_v1_JP` as v1
+on dup.Connect_ID = v1.Connect_ID
+left JOIN	
+`nih-nci-dceg-connect-prod-6d04.FlatConnect.module2_v2_JP` as v2
+ON v2.Connect_ID = coalesce(dup.Connect_ID,v1.Connect_ID)\n
+INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` as p
+ON coalesce(dup.Connect_ID, v1.Connect_ID, v2.Connect_ID) = p.Connect_ID
+WHERE p.d_821247024 = '197316935' and p.d_747006172 != '353358909'",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data//M2_merged_BQ2query_11232023.txt", sep="\t",row.names = F,quote = F,col.names = F)
+
 pii <- paste(dt_pii_dd$column_name[which(dt_pii_dd$table_name =="module4_v1_JP")],collapse = ",")
 schem_m4 <-  schema[[12]]
 m4_vars.nopii <- schem_m4$column_name[which(schem_m4$column_name %nin% pii)]
 select_m4 <- paste(m4_vars.nopii,collapse=", \nm4.")
 query <- paste("SELECT m4.",select_m4,") FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module4_v1_JP` b
 INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
-WHERE p.d_821247024 = '197316935'\"",sep="")
+WHERE p.d_821247024 = '197316935' and p.d_747006172 != '353358909'\"",sep="")
 
 write.table(paste("SELECT m4.",select_m4,"\np.Connect_ID) FROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module4_v1_JP` b
 INNER JOIN `nih-nci-dceg-connect-prod-6d04.FlatConnect.participants_JP` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
-WHERE p.d_821247024 = '197316935'\"",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M4_BQ2query_11232023.txt", sep="\t",row.names = F,quote = F,col.names = F)
+WHERE p.d_821247024 = '197316935' and and p.d_747006172 != '353358909'\"",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M4_BQ2query_11232023.txt", sep="\t",row.names = F,quote = F,col.names = F)
 
 
 
