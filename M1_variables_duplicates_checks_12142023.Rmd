@@ -1,0 +1,603 @@
+---
+title: "Module1_variables_checks_12142023"
+author: "JingWU"
+date: "2023-12-14"
+output:
+  pdf_document: default
+  html_document: default
+---
+This program is to check the variables which have the same CIDs in their names but with different length of replicated ending patterns in the module1 and module2 data. Theoretically, these variables are coded as the same responses to a question. Therefore, this code is to check
+1. to confirm that responses by these CIDS (by pair) are to the same questions;
+2. to check the valid responses by each variables of pairs (replicated patterns) to see whether they are integrated to one;
+3. to check how many of these variables (by pattern) are existing in both version 1 and version 2.
+4. to double check the existances of these replicate pattern variables in both version 1 and 2 datasets to make sure in order to use the appropriate variable names to integrate these set of pairs of variables.
+4. to find a wise way to integrate each common pattern variable into one unique variable for future. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table) ###to write or read and data management 
+library(bigrquery)
+library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management https://tidyselect.r-lib.org/reference/faq-external-vector.html
+library(dplyr) ###data management some functions are not available in the dplyr masked in the tidyverse
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+#library(sqldf) ##sql
+#library(lubridate) ###date time it is already masked in 'tidyverse'
+library(ggplot2) ###plots
+library(ggpubr) ###for the publications of plots
+library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
+library(gridExtra)
+#library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tidyr)
+library(tinytex) #for pdf
+library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html t
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+#library(summarytools) ##recommended not applied in this R code
+library(gmodels) ##recommended but not applied in this R code
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+#library(patchwork)
+library(rio)
+library(readxl)
+library(purrr)
+```
+
+## R Markdown
+
+This is an R Markdown document to check the duplicated variables in both versions of Module1 table in prod
+
+```{r, include=FALSE,eval=TRUE,echo=FALSE}
+options(knitr.table.format = "latex")
+currentDate <- Sys.Date()
+
+#dictionary <- rio::import("https://github.com/episphere/conceptGithubActions/blob/master/aggregate.json",format = "json")
+dictionary <- rio::import("https://episphere.github.io/conceptGithubActions/aggregateCopy.json",format = "json")
+dd <- dplyr::bind_rows(dictionary,.id="CID")
+#dd <- dd[!duplicated(dd),] #remove 140duplicates
+#THIS TABLE HAS REPLICATED (CIDS+LABELS) WITH DIFFERENT VARIABLE NAMES,
+dd$`Variable Label` <- ifelse(is.na(dd$`Variable Label`), dd$`Variable Name`, dd$`Variable Label`)
+#dd <- as.data.frame.matrix(do.call("rbind",dictionary)) #3523, some CID and labels are linked to different variable names 
+
+#dd1 <- dd[!duplicated(dd[,c("CID","Variable Label")]),]
+length(unique(dd$CID))
+#dd1 <- dd[!duplicated(dd[,c("CID","Variable Label")]),]
+length(unique(dd$CID))
+
+#the master dd with more info. on the formats (levels)
+urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github
+y <- read.csv(urlfile)
+#dd$labels.combo <- paste(dd$`Variable Label`,dd$`Variable Name`,sep="$")
+ bq_auth()
+#The bigrquery package is requesting access to your Google account.
+#Select a pre-authorised account or enter '0' to obtain a new token.
+#Press Esc/Ctrl + C to cancel.
+
+  2 
+  
+  project <- "nih-nci-dceg-connect-prod-6d04"
+  billing <- "nih-nci-dceg-connect-prod-6d04"
+
+schmV1_flatM1 <- bq_project_query(project, query="SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='module1_v1_JP'")
+schmV2_flatM1 <- bq_project_query(project, query="SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='module1_v2_JP'")
+
+flatM1schm_V1 <- bigrquery::bq_table_download(schmV1_flatM1,bigint = "character") #1283
+flatM1schm_V2 <- bigrquery::bq_table_download(schmV2_flatM1,bigint = "character") #1283
+
+flatM1schm_V2 <- flatM1schm_V2 %>% mutate(long.Ending=ifelse(str_count(sapply(strsplit(column_name,"D_"),tail,1),"_") > 3 , 1,0)) #141 long endings
+
+flatM1schm_V1 <- flatM1schm_V1 %>% mutate(long.Ending=ifelse(str_count(sapply(strsplit(column_name,"D_"),tail,1),"_") > 3 , 1,0)) #174 long endings
+
+##to convert to numeric
+  numbers_only <- function(x) !grepl("\\D", x)
+#to find the variables with the same pattern only module 1 version 2 has the same CIDs with long and short same pattern endings, not version1
+
+##for the version 1 of module 1
+dupM1V1.vars <- NULL 
+
+cnames <- flatM1schm_V1$column_name
+for (i in 1:length(flatM1schm_V1$column_name)){
+    varname <- cnames[i]
+    dup_vars<- ifelse(grepl(varname,flatM1schm_V1$column_name),flatM1schm_V1$column_name[grepl(varname,flatM1schm_V1$column_name) ],NA)
+    
+    tmp <- c(varname,dup_vars[!is.na(dup_vars)])
+    tmp <- matrix(tmp, nrow=1, ncol=3)
+    dupM1V1.vars <- rbind(dupM1V1.vars,tmp)
+    dupM1V1.vars <- as.data.frame(dupM1V1.vars)
+#dup.vars <- as.data.frame(dup.vars)[complete.cases(dup.vars),]
+}
+
+names(dupM1V1.vars) <- c("column_name","matched.varnames1","matched.varnames2") 
+
+dupM1V1.vars <- dupM1V1.vars[which(dupM1V1.vars$matched.varnames1 !=dupM1V1.vars$matched.varnames2), ] %>% 
+  mutate(CID.1 = substring(column_name,3,11),
+         lastCID = ifelse(nchar(column_name) < 12, sapply(strsplit(matched.varnames2, "D_"),tail,1), substring(sapply(strsplit(column_name, "D_"),tail,1),1,9)))
+
+
+dupM1V1.var_dd <- merge(dupM1V1.vars, y[,c("conceptId.2","conceptId.3","Current.Source.Question","Current.Format.Value","Variable.Label")],by.x=c("CID.1","lastCID"),by.y=c("conceptId.2","conceptId.3"),all.x=TRUE)
+
+#to check the data on these similar naming variables in module 1 version 1
+select <- paste(c(dupM1V1.vars$matched.varnames1,dupM1V1.vars$matched.varnames2),collapse = ",")
+
+#module 1 version 2
+dup.vars <- NULL 
+
+cnames <- flatM1schm_V2$column_name
+for (i in 1:length(flatM1schm_V2$column_name)){
+    varname <- cnames[i]
+    dup_vars<- ifelse(grepl(varname,flatM1schm_V2$column_name),flatM1schm_V2$column_name[grepl(varname,flatM1schm_V2$column_name) ],NA)
+    
+    tmp <- c(varname,dup_vars[!is.na(dup_vars)])
+    tmp <- matrix(tmp, nrow=1, ncol=3)
+    dup.vars <- rbind(dup.vars,tmp)
+    dup.vars <- as.data.frame(dup.vars)
+    # 188 pairs in total, including Completed, completed_TS
+   
+#dup.vars <- as.data.frame(dup.vars)[complete.cases(dup.vars),]
+}
+
+
+
+names(dup.vars) <- c("column_name","matched.varnames1","matched.varnames2") 
+
+dup.vars <- dup.vars[which(dup.vars$matched.varnames1 !=dup.vars$matched.varnames2), ]
+max(nchar(dup.vars$column_name))
+#[1] 32
+
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "FlatConnect",
+  billing = billing
+)
+select <- dup.vars[,c(2:3)]
+select1 <- paste(dup.vars$matched.varnames1,collapse=",")
+select2 <- paste(dup.vars$matched.varnames2,collapse=",")
+#to check whether there is any variable in M1_version 1 in these dup.vars.
+length(flatM1schm_V1$column_name[grepl(paste(dup.vars$matched.varnames1,collapse="|"),flatM1schm_V1$column_name)]) #129
+length(flatM1schm_V1$column_name[grepl(paste(dup.vars$matched.varnames2,collapse="|"),flatM1schm_V1$column_name)]) #129
+query1 <- bq_project_query(project, query=paste("SELECT Connect_ID,", select1,",", select2, "FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=" "))
+
+v2_dup.vars <- bq_table_download(query1, bigint="integer64",n_max = Inf, page_size = 5000)
+
+ v2_dup.vars1 <- v2_dup.vars
+ cnames <- names(v2_dup.vars)
+ # # # # #  to check variables in recr_noinact_wl1
+ for (i in 1: length(cnames)){
+    varname <- cnames[i]
+    var<-pull(v2_dup.vars1,varname)
+    v2_dup.vars1[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+  }
+
+#to check the responses by these variables (by missing counts, values, whether any responses from the same persons)
+empty_columns <- colSums(is.na(v2_dup.vars) | v2_dup.vars == "") == nrow(v2_dup.vars)
+  #v2_dup.vars<- v2_dup.vars[,!empty_columns]
+
+colnames(v2_dup.vars[,empty_columns])
+# [1] "COMPLETED"                                                                    
+# [2] "D_384881609_1_1_D_206625031_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1"
+#384881609   206625031                                   Sib 1 Anal Cx Age      Age at diagnosis
+# [3] "D_483975329_1_1_D_206625031_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1"
+#483975329   206625031                                Sib 1 Bladder Cx Age      Age at diagnosis
+# [4] "COMPLETED_TS"                                                                 
+# [5] "D_317093647_D_206625031" 
+#317093647   206625031                               Mom Esophageal Cx Age      Age at diagnosis
+
+length(dup.vars$matched.varnames1[grepl("_1_1_1_|_2_2_2_|_3_3_3_|_4_4_4_|_5_5_5_|_6_6_6_|_7_7_7_|_8_8_8_|_9_9_9_",dup.vars$matched.varnames1)])
+#[1] 70
+length(dup.vars$matched.varnames2[grepl("_1_1_1_|_2_2_2_|_3_3_3_|_4_4_4_|_5_5_5_|_6_6_6_|_7_7_7_|_8_8_8_|_9_9_9_",dup.vars$matched.varnames2)])
+#[1] 62
+#these empty columns are the responses to Age on 
+compared <- NULL
+for (i in 1:length(dup.vars$column_name)){
+  vars <- dup.vars$column_name[i] 
+    
+  var.names <-  colnames(v2_dup.vars)[grepl(vars, colnames(v2_dup.vars))]
+  
+  tmp <- v2_dup.vars[,c("Connect_ID",var.names)] %>% unite("combind.vars", var.names, na.rm = TRUE, remove = FALSE)
+  tmp$compared.var <- vars
+  print(c(vars,length(tmp$Connect_ID[complete.cases(tmp)]))) #to check any pairs of responses from #the same Connect_ID #(participants): no 
+  # [1] "D_308014437_D_440307926" "60"
+  # [1] "D_351657815_D_576646485" "10"                     
+  # [1] "D_362270886_D_650100414" "38" 
+  # [1] "D_530742915_D_739237614" "1103"   
+  # [1] "D_588212264_D_486535201" "191"  
+  # [1] "D_797626610_D_774928994" "1085"
+  # [1] "D_814510313_D_677702321" "312"                    
+  # [1] "D_827393644_D_899840609" "106"
+  # [1] "D_976808005_D_852296096" "45"
+  #but there is no responses from both short ending and long ending variables 
+  var_long <- melt(tmp[which(!is.na(tmp$combind.vars)),],
+                   id.vars=c("Connect_ID","compared.var"), 
+                   measure.vars=var.names,
+                   variable.name="variblenames",
+                   value.name="values") %>% filter(.,!is.na(values))
+  compared <- rbind(compared,var_long)
+}
+compared <- compared[!is.na(compared$values),]
+compared$endinglength <- ifelse(nchar(compared$variblenames) > nchar(compared$compared.var),"long","short")
+compared1 <- compared %>% mutate(values = trimws(values),
+                                 endinglength = ifelse(nchar(variblenames) > nchar(compared.var),"long","short")) %>%     filter(is.na(values) | values!="")
+
+summary_m1v2dup <- v2_dup.vars1 %>% select(where(is.numeric)) %>% # select variables to summarise
+           map_df(.f = ~ broom::tidy(summary(.x)), .id = "variable")
+
+library(skimr)
+summary_m1v2dup <- skim(v2_dup.vars1) %>% as_tibble()
+#those responses from the pairs of variables are most are character variables from individual participants, but no any participants had responses from each pair in the same dataset.
+length(unique(compared$variblenames[grepl("_1_1_1_|_2_2_2_|_3_3_3_|_4_4_4_|_5_5_5_|_6_6_6_|_7_7_7_|_8_8_8_|_9_9_9_",compared$variblenames)]))
+#[1] 130
+
+#to check how many participants are involved with these set of variables and whether the participants had the solid responses from same patterned variables
+length(unique(compared$Connect_ID[duplicated(compared$Connect_ID)])) #17278 responses
+dim(compared[duplicated(compared[,c("Connect_ID","compared.var")]),])
+#[1] 2950    5  2950 participants' responses are related to these pairs of response issues.
+dim(compared[which(compared$compared.var=="D_317093647"),])
+#[1] 42  4
+
+##to check whether these replicated patterned variables are in the version 1 table:
+length(flatM1schm_V1$column_name[grepl(paste(dup.vars$column_name,collapse="|"),flatM1schm_V1$column_name)])
+#151
+
+length(flatM1schm_V1$column_name[which(flatM1schm_V1$column_name %in% dup.vars$column_name)]) #49
+dup.vars.v1 <-flatM1schm_V1$column_name[which(grepl(paste(dup.vars$column_name,collapse="|"),flatM1schm_V1$column_name))]
+
+flatM1schm_V1<- flatM1schm_V1 %>% mutate(dup.var2.flag= ifelse(grepl(paste(dup.vars$column_name,collapse="|"),flatM1schm_V1$column_name), 1,0),
+                                         dup.var2.link = substring(column_name,1,31))  #151
+
+length(flatM1schm_V1$dup.var2.link[which(dup.vars$column_name %in% flatM1schm_V1$dup.var2.link)])
+#[1] 134
+
+select3 <- paste(flatM1schm_V1$column_name[which(grepl(paste(unique(c(dup.vars$column_name,dupM1V1.vars$matched.varnames1,dupM1V1.vars$matched.varnames2)),collapse="|"),flatM1schm_V1$column_name))],collapse=",") #153
+
+query11 <- bq_project_query(project, query=paste("SELECT Connect_ID,", select3, ", FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v1_JP`",sep=" "))
+
+v1_dup.vars1 <- bq_table_download(query11, bigint="integer64",n_max = Inf, page_size = 5000)
+
+ ###convert the numeric
+ v1_dup.vars1 <- v1_dup.vars1
+ cnames <- names(v1_dup.vars1)
+ # # # # #  to check variables in recr_noinact_wl1
+ for (i in 1: length(cnames)){
+    varname <- cnames[i]
+    var<-pull(v1_dup.vars1,varname)
+    v1_dup.vars1[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+  }
+ 
+
+summary_m1v1dup <- v1_dup.vars1 %>% select(where(is.numeric)) %>% # select variables to summarise
+           map_df(.f = ~ broom::tidy(summary(.x)), .id = "variable")
+
+# the question on the variable d_317093647
+y[grepl("317093647",y$conceptId.2),c("conceptId.2","Current.Source.Question")]
+#      conceptId.2
+# 2763   317093647
+# 2764   317093647
+#                                                                                                                           Current.Source.Question
+# 2763 Mother - How old was your mother when they were first told by a doctor or other health professional that they have or had esophageal cancer?
+# 2764 Mother - How old was your mother when they were first told by a doctor or other health professional that they have or had esophageal cancer?
+View(y)
+
+#to check the non missing input of each question
+
+v1_dup.vars1$missing.counts <- rowSums(is.na(v1_dup.vars1))
+summary(v1_dup.vars1$missing.counts)
+v1_dup.vars1$version <- 1
+
+
+#to check how many dup patterned variables in version 1 are overlapping with the ones in the version 2
+
+
+
+##summary dup.vars from both versions in Module 1
+dup.vars_dd <- dup.vars %>% mutate(CID.1 = substring(column_name,3,11),
+                                   lastCID = ifelse(nchar(column_name) < 12, sapply(strsplit(matched.varnames2, "D_"),tail,1), substring(sapply(strsplit(column_name, "D_"),tail,1),1,9)))
+
+
+dup.var_dd1 <- merge(dup.vars_dd, flatM1schm_V1[which(flatM1schm_V1$dup.var2.flag==1),c("column_name","dup.var2.link")], by.x="column_name", by.y="dup.var2.link",all.x=TRUE) #to check the overall lapping variables between version1 and version2 on these same patterned variables
+
+names(dup.var_dd1)[6] <- "dupV1.varnames"
+
+dup.var_dd1 <- dup.var_dd1 %>% 
+  mutate(dupvars_bothV1V2 = ifelse(is.na(dupV1.varnames),NA, 
+                                   ifelse(dupV1.varnames == matched.varnames1 | dupV1.varnames == matched.varnames2, 1, 0)),
+         long.Ending=ifelse(str_count(sapply(strsplit(matched.varnames1,"D_"),tail,1),"_") > 3 | str_count(sapply(strsplit(matched.varnames2,"D_"),tail,1),"_") > 3 , 1,0)) #134
+
+
+dup.vars_dd1 <- merge(dup.var_dd1,y[,c("conceptId.2","conceptId.3","Current.Source.Question","Current.Format.Value","Variable.Label")],by.x=c("CID.1","lastCID"),by.y=c("conceptId.2","conceptId.3"))
+
+table(dup.var_dd1$long.Ending) #132 long.Endings
+flatM1schm_V2$column_name[which(flatM1schm_V2$long.Ending==1 & flatM1schm_V2$column_name %nin% c(dup.var_dd1$matched.varnames1,dup.var_dd1$matched.varnames2))]
+# [1] "D_116065851_3_3_D_206625031_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3"                           
+# [2] "D_142912472_9_9_D_206625031_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9"                           
+# [3] "D_158409298_7_7_D_206625031_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7_7"                           
+# [4] "D_216840563_5_5_D_261863326_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5"                           
+# [5] "D_247160067_5_5_D_206625031_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5"                           
+# [6] "D_483735587_5_5_D_261863326_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5_5"                           
+# [7] "D_513077276_3_3_D_206625031_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3"                           
+# [8] "D_513077276_3_3_D_261863326_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3"                           
+# [9] "D_570279754_11_11_D_206625031_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11"
+
+#to compare the responses of these 151 variables between version 1 and version 2
+v2_dup.vars$version <- 2
+dup.vars_v12 <- bind_rows(v1_dup.vars,v2_dup.vars[,c("Connect_ID","version",dup.vars.v1)])
+
+  numbers_only <- function(x) !grepl("\\D", x)
+
+ ###convert the numeric
+dup.dt12 <- dup.vars_v12
+cnames <- names(dup.vars_v12)
+#  to check variables in dup.vars_v12
+for (i in 1: length(cnames)){
+   varname <- cnames[i]
+   var<-pull(dup.dt12,varname)
+   dup.dt12[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+
+
+dup.dt12.compare <- dup.dt12 %>% group_by(version) %>% split(.$version) %>% map(summary) %>% as_tibble()
+#D_308014437_D_440307926 
+D_308014437_D_308014437_D_440307926 
+
+# D_317093647_D_206625031 D_317093647
+# D_351657815_D_351657815_D_576646485 (num)  D_351657815_D_576646485 (chr)
+# D_362270886_D_362270886_D_650100414 (num)  D_362270886_D_650100414 
+# D_530742915_D_530742915_D_739237614 (num)  D_530742915_D_739237614
+# D_588212264_D_588212264_D_486535201.(num)  D_588212264_D_486535201
+# D_797626610_D_797626610_D_774928994.       D_797626610_D_774928994
+# D_814510313_D_814510313_D_677702321
+# D_827393644_D_899840609
+# D_976808005_D_852296096
+  # [1] "D_308014437_D_440307926" "60"
+  # [1] "D_351657815_D_576646485" "10"                     
+  # [1] "D_362270886_D_650100414" "38" 
+  # [1] "D_530742915_D_739237614" "1103"   
+  # [1] "D_588212264_D_486535201" "191"  
+  # [1] "D_797626610_D_774928994" "1085"
+  # [1] "D_814510313_D_677702321" "312"                    
+  # [1] "D_827393644_D_899840609" "106"
+  # [1] "D_976808005_D_852296096" "45"
+
+colnames(dup.dt12[ grepl("\\D",dup.dt12),])
+char.var <- list()
+for (i in 1: length(cnames)){
+   varname <- cnames[i]
+   var<-pull(dup.dt12,varname)
+   #ifelse(!numbers_only(var), print(varname), print("numeric"))
+   char.var[[i]] <-ifelse(!numbers_only(var), varname, NA)
+}
+
+ls <- unique(unlist(char.var)[which(unlist(char.var)!="NA")])
+#[1] "D_308014437_D_440307926"       "D_351657815_D_576646485"       "D_362270886_D_650100414"      
+# [4] "D_530742915_D_739237614"       "D_537137982_2_2_D_338020179_2" "D_537137982_3_3_D_338020179_3"
+# [7] "D_578895128_1_1_D_957429734_1" "D_578895128_2_2_D_957429734_2" "D_578895128_3_3_D_957429734_3"
+#[10] "D_578895128_4_4_D_957429734_4" "D_588212264_D_486535201"       "D_797626610_D_774928994"      
+#[13] "D_812370563_1_1_D_933110091_1" "D_814510313_D_677702321"       "D_827393644_D_899840609"      
+#[16] "D_976808005_D_852296096"  
+
+dup_v1.vars <-unique(compared[which(colnames(dup.dt12) %in% compared$variblenames), c("compared.var","variblenames")])
+ dup_v1.vars
+ #                      compared.var                                                                  variblenames
+ # 1: D_116065851_1_1_D_206625031_1_1                                               D_116065851_1_1_D_206625031_1_1
+#  2: D_142912472_1_1_D_206625031_1_1                                               D_142912472_1_1_D_206625031_1_1
+#  3: D_142912472_1_1_D_206625031_1_1 D_142912472_1_1_D_206625031_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1
+#  4: D_142912472_1_1_D_261863326_1_1                                               D_142912472_1_1_D_261863326_1_1
+#  5: D_142912472_1_1_D_261863326_1_1 D_142912472_1_1_D_261863326_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1_1
+#  6: D_142912472_2_2_D_261863326_2_2 D_142912472_2_2_D_261863326_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2_2
+#  7: D_142912472_2_2_D_261863326_2_2                                               D_142912472_2_2_D_261863326_2_2
+#  8: D_142912472_3_3_D_206625031_3_3 D_142912472_3_3_D_206625031_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3
+#  9: D_142912472_3_3_D_206625031_3_3                                               D_142912472_3_3_D_206625031_3_3
+# 10: D_142912472_3_3_D_261863326_3_3 D_142912472_3_3_D_261863326_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3
+# 11: D_142912472_3_3_D_261863326_3_3                                               D_142912472_3_3_D_261863326_3_3
+#12: D_142912472_6_6_D_261863326_6_6 D_142912472_6_6_D_261863326_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6
+#13: D_158354252_1_1_D_206625031_1_1                                               D_158354252_1_1_D_206625031_1_1
+ 
+ 
+
+```
+
+Here below are the code to check the module 2 on the similar variabless with the same name patterns
+
+```{r}
+schmV1_flatM2 <- bq_project_query(project, query="SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='module2_v1_JP'")
+schmV2_flatM2 <- bq_project_query(project, query="SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='module2_v2_JP'")
+
+flatM2schm_V1 <- bigrquery::bq_table_download(schmV1_flatM2,bigint = "character") 
+flatM2schm_V2 <- bigrquery::bq_table_download(schmV2_flatM2,bigint = "character") 
+
+dupM2.vars <- NULL 
+
+cnames <- flatM2schm_V2$column_name
+for (i in 1:length(flatM2schm_V2$column_name)){
+    varname <- cnames[i]
+    dupM2_vars<- ifelse(grepl(varname,flatM2schm_V2$column_name),flatM2schm_V2$column_name[grepl(varname,flatM2schm_V2$column_name) ],NA)
+    
+    tmp <- c(varname,dupM2_vars[!is.na(dupM2_vars)])
+    tmp <- matrix(tmp, nrow=1, ncol=3)
+    dupM2.vars <- rbind(dupM2.vars,tmp)
+    dupM2.vars <- as.data.frame(dupM2.vars)
+   
+}
+
+names(dupM2.vars) <- c("column_name","matched.varnames1","matched.varnames2") 
+
+dupM2.vars <- dupM2.vars[which(dupM2.vars$matched.varnames1 !=dupM2.vars$matched.varnames2), ]
+select1 <- paste(dupM2.vars$matched.varnames1,collapse=",")
+select2 <- paste(dupM2.vars$matched.varnames2,collapse=",")
+
+query2 <- bq_project_query(project, query=paste("SELECT Connect_ID,", select1,",", select2, "FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.module2_v2_JP`",sep=" "))
+
+m2v2_dup.vars <- bq_table_download(query2, bigint="integer64",n_max = Inf, page_size = 5000)
+empty_columns <- colSums(is.na(m2v2_dup.vars) | m2v2_dup.vars == "") == nrow(m2v2_dup.vars)
+  #m2v2_dup.vars<- v2_dup.vars[,!empty_columns]
+
+##Module 2 version 1 data
+dupM2v1.vars <- NULL 
+
+cnames <- flatM2schm_V1$column_name
+for (i in 1:length(flatM2schm_V1$column_name)){
+    varname <- cnames[i]
+    dupM2v1_vars<- ifelse(grepl(varname,flatM2schm_V1$column_name),flatM2schm_V1$column_name[grepl(varname,flatM2schm_V1$column_name) ],NA)
+    
+    tmp <- c(varname,dupM2v1_vars[!is.na(dupM2v1_vars)])
+    tmp <- matrix(tmp, nrow=1, ncol=3)
+    dupM2v1.vars <- rbind(dupM2v1.vars,tmp)
+    dupM2v1.vars <- as.data.frame(dupM2v1.vars)
+
+}
+
+names(dupM2v1.vars) <- c("column_name","matched.varnames1","matched.varnames2") 
+
+dupM2v1.vars <- dupM2v1.vars[which(dupM2v1.vars$matched.varnames1 !=dupM2v1.vars$matched.varnames2), ]
+dupM2v1.vars$version <-1
+dupM2.vars$version <-2
+
+dupM2both.vars <- bind_rows(dupM2v1.vars,dupM2.vars) %>% 
+  mutate(CID.1 = substring(column_name,3,11),
+         lastCID = ifelse(nchar(column_name) < 12, sapply(strsplit(matched.varnames2, "D_"),tail,1), substring(sapply(strsplit(column_name, "D_"),tail,1),1,9)))
+
+dupM2.vars_dd <- merge(dupM2both.vars,y[,c("conceptId.2","conceptId.3","Current.Source.Question","Current.Format.Value","Variable.Label")],by.x=c("CID.1","lastCID"),by.y=c("conceptId.2","conceptId.3"))
+
+dd[grepl("648960871",dd$CID),]
+# A tibble: 1 × 3
+#   CID       `Variable Label` `Variable Name`
+#   <chr>     <chr>            <chr>          
+# 1 648960871 Never            Never          
+dd[grepl("496539718",dd$CID),]
+# A tibble: 1 × 3
+#   CID       `Variable Label`        `Variable Name`           
+#   <chr>     <chr>                   <chr>                     
+# 1 496539718 Age First Period, Never SrvMRE_FirstPeriAgeNH_v1r0
+
+select <- paste(c(dupM2v1.vars$matched.varnames1,dupM2v1.vars$matched.varnames2),collapse = ",")
+
+query3 <- bq_project_query(project, query=paste("SELECT Connect_ID,",select, "FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.module2_v1_JP`",sep=" "))
+
+m2v1_dup.vars <- bq_table_download(query3, bigint="integer64",n_max = Inf, page_size = 5000)
+empty_columns <- colSums(is.na(m2v1_dup.vars) | m2v1_dup.vars == "") == nrow(m2v2_dup.vars)
+
+
+```
+
+
+## Output datasets
+
+
+
+```{r, include=FALSE,eval=TRUE,echo=FALSE}}
+outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/Mia_Requests/AggregateTables/Outputs/"
+write.csv(dup.vars_dd1,paste(outputpath, "Module1_variables_sameCIDs_V1V2_check_",Sys.Date(),".csv",sep=""))
+write.csv(summary_m1v1dup,paste(outputpath, "Module1_version1_similiar_variable_check_summary_numeric_", Sys.Date(),".csv",sep=""))
+write.csv(summary_m1v2dup,paste(outputpath, "Module1_version2_similiar_variable_check_summary_numeric_", Sys.Date(),".csv",sep=""))
+write.csv(compared1,paste(outputpath, "Module1_version2_similiar_variable_data_", Sys.Date(),".csv",sep=""))
+write.csv(dupM2.vars_dd,paste(outputpath, "Module2_variables_sameCIDs_V1V2_check_",Sys.Date(),".csv",sep=""))
+```
+
+
+```{r}
+
+age_year <- flatM1schm_V2[grepl("150352141|122887481|534007917|752636038|518750011|275770221|527057404", flatM1schm_V2$column_name),]
+age_year_v1 <- flatM1schm_V1[grepl("150352141|122887481|534007917|752636038|518750011|275770221|527057404", flatM1schm_V1$column_name),]
+
+dt_bq <- function(q,data){
+    select <- paste(q,collapse = ",")
+    query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT Connect_ID,",select," FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.",data,"`\")",sep="")))
+   
+   dt<- bq_table_download(query,bigint="integer64",n_max = Inf, page_size = 500) 
+
+   
+}
+query2 <- paste(age_year$column_name,collapse=",")
+m1v2_age_year <- dt_bq(age_year$column_name,"module1_v2_JP")
+   dt1 <- m1v2_age_year
+   cnames <- names(dt1)
+#  to check variables in dt
+for (i in 1: length(cnames)){
+    varname <- cnames[i]
+    var<-pull(dt1,varname)
+    dt1[,cnames[i]] <- ifelse(numbers_only(var), as.numeric(as.character(var)), var)
+}
+sum_ageyear2 <- skim(dt1) %>% as_tibble()
+write.csv(sum_ageyear2,paste(outputpath, "Module1_versio2_Age_year_surgery_variables_check_summary_numeric_", Sys.Date(),".csv",sep=""))
+
+```
+##to combine the not null values of those variables with similar name patterns in the module1 version 2
+I have developed another sql for combining the values of these variables with type 3 pattern
+DECLARE columns STRING;
+SET columns = (
+WITH selected_columns as (
+SELECT column_name 
+FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMNS
+WHERE 
+table_name = 'module1_v2_JP' AND REGEXP_CONTAINS(column_name, "D_116065851_1_1_D_206625031_1_1")
+)
+SELECT STRING_AGG(column_name) AS columns 
+  FROM selected_columns
+);
+
+EXECUTE IMMEDIATE format("SELECT Connect_ID, %s, coalesce(%s) as combo  FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`", columns, columns);
+
+
+```{r}
+#x is a pattern
+combine_renames.txt<- function(x,schema) {
+  pairs <- schema$column_name[grep(x,schema$column_name)]
+  pairs.txt <- paste("combine_and_rename([",x1, x2,"])  AS",x_combo, sep=" ")
+}
+
+sql.pair.var <- paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1),c("matched.varnames1","matched.varnames2")],collapse=",")
+
+dup.var_dd1$pairs <- ifelse(dup.var_dd1$long.Ending==1, paste(dup.var_dd1$matched.varnames1,dup.var_dd1$matched.varnames2,sep=","), NA)
+
+dup.var_dd1$sql.pairs <- ifelse(dup.var_dd1$long.Ending==1, paste0("COALESCE(",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,") AS ", substring(dup.var_dd1$column_name,1,nchar(dup.var_dd1$column_name)-2)), NA)
+
+dup.var_dd1$sql.pairs_JK <- ifelse(dup.var_dd1$long.Ending==1, paste0("combine_and_rename([",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,"]) AS ", substring(dup.var_dd1$column_name,1,nchar(dup.var_dd1$column_name)-2)), NA)
+
+
+write.table(paste("SELECT ,Connect_ID,\n",paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1)]$sql.pairs_JK,collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_rename_combine_JK_01022024.txt", sep="\t",row.names = F,quote = F,col.names = F)
+
+write.table(paste("SELECT ,Connect_ID,\n",paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1)]$sql.pairs,collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_01022024.txt", sep="\t",row.names = F,quote = F,col.names = F)
+
+#simple chcek with a pair 
+#e.g. nchar("D_116065851_1_1_D_206625031_1_1")
+#[1] 31
+coalesce_rename <- function(x,data){
+  
+  pattern <- substring(as.string(x),1,31)
+  query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.
+                                 INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='",data,
+                                   "'\")",sep="")))
+   
+   schema <- bq_table_download(query,bigint="integer64",n_max = Inf, page_size = 500) 
+  
+  if(length(schema$column_name[grepl(pattern, schema$column_name)])==2){
+  
+  sql.txt <- paste0("DECLARE columns STRING;
+SET columns = (
+WITH selected_columns as (
+SELECT column_name 
+FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect`.INFORMATION_SCHEMA.COLUMNS
+WHERE 
+table_name = '",data,"' AND REGEXP_CONTAINS(column_name, \"", x,"\")
+)
+SELECT STRING_AGG(column_name) AS columns 
+  FROM selected_columns
+);\n
+
+EXECUTE IMMEDIATE format(\"SELECT Connect_ID, %s, coalesce(%s) as combo  FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.",data,"`\", columns, columns);",sep="")
+  }
+  else {sql.txt <- c(x, NA)}
+return(c(x,sql.txt))
+}
+
+long.ending_M1V2 <- write.table()
+```
+
+
