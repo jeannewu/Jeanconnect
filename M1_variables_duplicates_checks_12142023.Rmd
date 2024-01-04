@@ -556,14 +556,16 @@ sql.pair.var <- paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1),c("matched.v
 
 dup.var_dd1$pairs <- ifelse(dup.var_dd1$long.Ending==1, paste(dup.var_dd1$matched.varnames1,dup.var_dd1$matched.varnames2,sep=","), NA)
 
-dup.var_dd1$sql.pairs <- ifelse(dup.var_dd1$long.Ending==1, paste0("COALESCE(",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,") AS ", substring(dup.var_dd1$column_name,1,nchar(dup.var_dd1$column_name)-2)), NA)
+dup.var_dd1$sql.newnames <- ifelse(dup.var_dd1$long.Ending==1, paste0("D_",dup.var_dd1$CID.1,"_D_",dup.var_dd1$lastCID,".", str_sub(dup.var_dd1$column_name,-2,-1)),  NA)
 
-dup.var_dd1$sql.pairs_JK <- ifelse(dup.var_dd1$long.Ending==1, paste0("combine_and_rename([",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,"]) AS ", substring(dup.var_dd1$column_name,1,nchar(dup.var_dd1$column_name)-2)), NA)
+dup.var_dd1$sql.pairs <- ifelse(dup.var_dd1$long.Ending==1, paste0("COALESCE(",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,") AS ", dup.var_dd1$sql.newnames), NA)
+
+dup.var_dd1$sql.pairs_JP <- ifelse(dup.var_dd1$long.Ending==1, paste0("combine_and_rename([",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,"]) AS ", dup.var_dd1$sql.newnames), NA)
 
 
-write.table(paste("SELECT ,Connect_ID,\n",paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1)]$sql.pairs_JK,collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_rename_combine_JK_01022024.txt", sep="\t",row.names = F,quote = F,col.names = F)
+write.table(paste("SELECT Connect_ID,\n",paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1)]$sql.pairs_JP,collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_rename_combine_JP_01022024.txt", sep="\t",row.names = F,quote = F,col.names = F)
 
-write.table(paste("SELECT ,Connect_ID,\n",paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1)]$sql.pairs,collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_01022024.txt", sep="\t",row.names = F,quote = F,col.names = F)
+write.table(paste("SELECT Connect_ID,\n",paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1)]$sql.pairs,collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_coalesce_01022024.txt", sep="\t",row.names = F,quote = F,col.names = F)
 
 #simple chcek with a pair 
 #e.g. nchar("D_116065851_1_1_D_206625031_1_1")
