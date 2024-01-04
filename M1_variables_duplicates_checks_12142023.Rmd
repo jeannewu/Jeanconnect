@@ -325,6 +325,7 @@ flatM1schm_V2$column_name[which(flatM1schm_V2$long.Ending==1 & flatM1schm_V2$col
 # [7] "D_513077276_3_3_D_206625031_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3"                           
 # [8] "D_513077276_3_3_D_261863326_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3_3"                           
 # [9] "D_570279754_11_11_D_206625031_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11_11"
+table(dup.var_dd1$digits.Ends) #177
 
 #to compare the responses of these 151 variables between version 1 and version 2
 v2_dup.vars$version <- 2
@@ -557,7 +558,7 @@ sql.pair.var <- paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1),c("matched.v
 
 dup.var_dd1$pairs <- ifelse(dup.var_dd1$long.Ending==1, paste(dup.var_dd1$matched.varnames1,dup.var_dd1$matched.varnames2,sep=","), NA)
 
-dup.var_dd1$sql.newnames <- ifelse(dup.var_dd1$digits.Ends==1, paste0("D_",dup.var_dd1$CID.1,"_D_",dup.var_dd1$lastCID,".", str_sub(dup.var_dd1$column_name,-2,-1)),  NA)
+dup.var_dd1$sql.newnames <- ifelse(dup.var_dd1$digits.Ends==1, paste0("D_",dup.var_dd1$CID.1,"_D_",dup.var_dd1$lastCID, str_sub(dup.var_dd1$column_name,-2,-1)),  NA)
 
 dup.var_dd1$sql.pairs <- ifelse(dup.var_dd1$digits.Ends==1, paste0("COALESCE(",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,") AS ", dup.var_dd1$sql.newnames), NA)
 
