@@ -558,7 +558,7 @@ sql.pair.var <- paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1),c("matched.v
 
 dup.var_dd1$pairs <- ifelse(dup.var_dd1$long.Ending==1, paste(dup.var_dd1$matched.varnames1,dup.var_dd1$matched.varnames2,sep=","), NA)
 
-dup.var_dd1$sql.newnames <- ifelse(dup.var_dd1$digits.Ends==1, paste0("D_",dup.var_dd1$CID.1,"_D_",dup.var_dd1$lastCID, str_sub(dup.var_dd1$column_name,-2,-1)),  NA)
+dup.var_dd1$sql.newnames <- ifelse(dup.var_dd1$digits.Ends==1, paste0("D_",dup.var_dd1$CID.1,"_D_",dup.var_dd1$lastCID,"_", str_split_i(dup.var_dd1$column_name,"_",-1)),  NA)
 
 dup.var_dd1$sql.pairs <- ifelse(dup.var_dd1$digits.Ends==1, paste0("COALESCE(",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,") AS ", dup.var_dd1$sql.newnames), NA)
 
