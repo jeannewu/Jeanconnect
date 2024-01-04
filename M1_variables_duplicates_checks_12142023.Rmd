@@ -308,7 +308,8 @@ names(dup.var_dd1)[6] <- "dupV1.varnames"
 dup.var_dd1 <- dup.var_dd1 %>% 
   mutate(dupvars_bothV1V2 = ifelse(is.na(dupV1.varnames),NA, 
                                    ifelse(dupV1.varnames == matched.varnames1 | dupV1.varnames == matched.varnames2, 1, 0)),
-         long.Ending=ifelse(str_count(sapply(strsplit(matched.varnames1,"D_"),tail,1),"_") > 3 | str_count(sapply(strsplit(matched.varnames2,"D_"),tail,1),"_") > 3 , 1,0)) #134
+         long.Ending=ifelse(str_count(sapply(strsplit(matched.varnames1,"D_"),tail,1),"_") > 3 | str_count(sapply(strsplit(matched.varnames2,"D_"),tail,1),"_") > 3 , 1,0),#134
+         digits.Ends=ifelse(str_count(sapply(strsplit(matched.varnames1,"D_"),tail,1),"_") > 0 | str_count(sapply(strsplit(matched.varnames2,"D_"),tail,1),"_") > 0 , 1,0)) 
 
 
 dup.vars_dd1 <- merge(dup.var_dd1,y[,c("conceptId.2","conceptId.3","Current.Source.Question","Current.Format.Value","Variable.Label")],by.x=c("CID.1","lastCID"),by.y=c("conceptId.2","conceptId.3"))
@@ -556,11 +557,11 @@ sql.pair.var <- paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1),c("matched.v
 
 dup.var_dd1$pairs <- ifelse(dup.var_dd1$long.Ending==1, paste(dup.var_dd1$matched.varnames1,dup.var_dd1$matched.varnames2,sep=","), NA)
 
-dup.var_dd1$sql.newnames <- ifelse(dup.var_dd1$long.Ending==1, paste0("D_",dup.var_dd1$CID.1,"_D_",dup.var_dd1$lastCID,".", str_sub(dup.var_dd1$column_name,-2,-1)),  NA)
+dup.var_dd1$sql.newnames <- ifelse(dup.var_dd1$digits.Ends==1, paste0("D_",dup.var_dd1$CID.1,"_D_",dup.var_dd1$lastCID,".", str_sub(dup.var_dd1$column_name,-2,-1)),  NA)
 
-dup.var_dd1$sql.pairs <- ifelse(dup.var_dd1$long.Ending==1, paste0("COALESCE(",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,") AS ", dup.var_dd1$sql.newnames), NA)
+dup.var_dd1$sql.pairs <- ifelse(dup.var_dd1$digits.Ends==1, paste0("COALESCE(",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,") AS ", dup.var_dd1$sql.newnames), NA)
 
-dup.var_dd1$sql.pairs_JP <- ifelse(dup.var_dd1$long.Ending==1, paste0("combine_and_rename([",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,"]) AS ", dup.var_dd1$sql.newnames), NA)
+dup.var_dd1$sql.pairs_JP <- ifelse(dup.var_dd1$digits.Ends==1, paste0("combine_and_rename([",dup.var_dd1$matched.varnames1,",",dup.var_dd1$matched.varnames2,"]) AS ", dup.var_dd1$sql.newnames), NA)
 
 
 write.table(paste("SELECT Connect_ID,\n",paste(dup.var_dd1[which(dup.var_dd1$long.Ending==1)]$sql.pairs_JP,collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_rename_combine_JP_01022024.txt", sep="\t",row.names = F,quote = F,col.names = F)
@@ -599,7 +600,8 @@ EXECUTE IMMEDIATE format(\"SELECT Connect_ID, %s, coalesce(%s) as combo  FROM `n
 return(c(x,sql.txt))
 }
 
-long.ending_M1V2 <- write.table()
+###to update the sql text as we discussed variables ( Scenirio 2 and 3 ) can be combined and renamed on Jan. 3, 2023 with the agreements of Jake, and Nicole. And we will use the function "coalesce" to combine each pair of variables in the BQ2 data
+write.table(paste("SELECT Connect_ID,\n",paste(dup.var_dd1$sql.pairs[which(dup.var_dd1$digits.Ends==1)],collapse=", \n")," \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=""),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M1V2_Variable_similar_query_coalesce_01042024.txt", sep="\t",row.names = F,quote = F,col.names = F)
 ```
 
 
