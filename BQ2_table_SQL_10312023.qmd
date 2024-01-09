@@ -160,8 +160,8 @@ schem_m1_v1 <- schema[[7]]
 schem_m1_v2 <- schema[[8]]
 
 var.matched <- schem_m1_v1$column_name[which(schem_m1_v1$column_name %in% schem_m1_v2$column_name)]
-V1_only_vars <- schem_m1_v1$column_name[which(schem_m1_v1$column_name %nin% m1_common.vars)]
-V2_only_vars <- schem_m1_v2$column_name[which(schem_m1_v2$column_name %nin% m1_common.vars)]
+V1_only_vars <- schem_m1_v1$column_name[which(schem_m1_v1$column_name %nin% var.matched)]
+V2_only_vars <- schem_m1_v2$column_name[which(schem_m1_v2$column_name %nin% var.matched)]
 
 v1_only_pii <- dt_pii_dd$column_name[which(dt_pii_dd$column_name %in% V1_only_vars)]
 #[1] "D_537137982_14_14_D_338020179_14" "D_537137982_20_20_D_338020179_20" "D_537137982_13_13_D_338020179_13"
