@@ -105,10 +105,10 @@ dupM1V1.vars <- NULL
 cnames <- flatM1schm_V1$column_name
 for (i in 1:length(flatM1schm_V1$column_name)){
     varname <- cnames[i]
-    dup_vars<- ifelse(grepl(varname,flatM1schm_V1$column_name),flatM1schm_V1$column_name[grepl(varname,flatM1schm_V1$column_name) ],NA)
+    dup_vars<- flatM1schm_V1$column_name[grepl(varname,flatM1schm_V1$column_name) ]
     
     tmp <- c(varname,dup_vars[!is.na(dup_vars)])
-    tmp <- matrix(tmp, nrow=1, ncol=3)
+    tmp <- matrix(tmp, nrow=1, ncol=3,byrow=T)
     dupM1V1.vars <- rbind(dupM1V1.vars,tmp)
     dupM1V1.vars <- as.data.frame(dupM1V1.vars)
 #dup.vars <- as.data.frame(dup.vars)[complete.cases(dup.vars),]
@@ -132,10 +132,10 @@ dup.vars <- NULL
 cnames <- flatM1schm_V2$column_name
 for (i in 1:length(flatM1schm_V2$column_name)){
     varname <- cnames[i]
-    dup_vars<- ifelse(grepl(varname,flatM1schm_V2$column_name),flatM1schm_V2$column_name[grepl(varname,flatM1schm_V2$column_name) ],NA)
+    dup_vars<- flatM1schm_V2$column_name[grepl(varname,flatM1schm_V2$column_name)]
     
     tmp <- c(varname,dup_vars[!is.na(dup_vars)])
-    tmp <- matrix(tmp, nrow=1, ncol=3)
+    tmp <- matrix(tmp, nrow=1, ncol=3,byrow=T)
     dup.vars <- rbind(dup.vars,tmp)
     dup.vars <- as.data.frame(dup.vars)
     # 188 pairs in total, including Completed, completed_TS
@@ -147,7 +147,7 @@ for (i in 1:length(flatM1schm_V2$column_name)){
 
 names(dup.vars) <- c("column_name","matched.varnames1","matched.varnames2") 
 
-dup.vars <- dup.vars[which(dup.vars$matched.varnames1 !=dup.vars$matched.varnames2), ]
+dup.vars <- dup.vars[which(dup.vars$matched.varnames1 !=dup.vars$matched.varnames2), ] #185
 max(nchar(dup.vars$column_name))
 #[1] 32
 
@@ -161,8 +161,8 @@ select <- dup.vars[,c(2:3)]
 select1 <- paste(dup.vars$matched.varnames1,collapse=",")
 select2 <- paste(dup.vars$matched.varnames2,collapse=",")
 #to check whether there is any variable in M1_version 1 in these dup.vars.
-length(flatM1schm_V1$column_name[grepl(paste(dup.vars$matched.varnames1,collapse="|"),flatM1schm_V1$column_name)]) #129
-length(flatM1schm_V1$column_name[grepl(paste(dup.vars$matched.varnames2,collapse="|"),flatM1schm_V1$column_name)]) #129
+length(flatM1schm_V1$column_name[grepl(paste(dup.vars$matched.varnames1,collapse="|"),flatM1schm_V1$column_name)]) #140
+length(flatM1schm_V1$column_name[grepl(paste(dup.vars$matched.varnames2,collapse="|"),flatM1schm_V1$column_name)]) #103
 query1 <- bq_project_query(project, query=paste("SELECT Connect_ID,", select1,",", select2, "FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v2_JP`",sep=" "))
 
 v2_dup.vars <- bq_table_download(query1, bigint="integer64",n_max = Inf, page_size = 5000)
@@ -249,12 +249,133 @@ length(flatM1schm_V1$column_name[grepl(paste(dup.vars$column_name,collapse="|"),
 length(flatM1schm_V1$column_name[which(flatM1schm_V1$column_name %in% dup.vars$column_name)]) #49
 dup.vars.v1 <-flatM1schm_V1$column_name[which(grepl(paste(dup.vars$column_name,collapse="|"),flatM1schm_V1$column_name))]
 
-flatM1schm_V1<- flatM1schm_V1 %>% mutate(dup.var2.flag= ifelse(grepl(paste(dup.vars$column_name,collapse="|"),flatM1schm_V1$column_name), 1,0),
-                                         dup.var2.link = substring(column_name,1,31))  #151
+flatM1schm_V1<- flatM1schm_V1 %>% 
+  mutate(dup.var2.flag = ifelse(grepl(paste(dup.vars$column_name,collapse="|"),column_name), 1, 0), #151: 90 from common.v1v2, 61 only v1
+         dup.var2.link = case_when(str_count(column_name,"D_") < 3 & str_count(column_name,"_") < 8 ~ column_name,                                                                  str_count(column_name,"D_") <3 & str_count(column_name,"_") > 7 ~ substring(column_name,1,31),
+                                   str_count(column_name,"D_") >2 & str_split_i(column_name,"_D_",1) == paste0("D_",str_split_i(column_name,"_D_",2))  ~ paste0(str_split_i(column_name,"_D_",1),"_D_",str_split_i(column_name,"_D_",3))),
+         common.v1v2 = ifelse(column_name %in% flatM1schm_V2$column_name, 1,0),
+         conceptId.2 = str_split_i(column_name,"_",2),
+         conceptId.3 = substring(str_split_i(column_name,"D_",-1),1,9))
+         #Q_CID.1st=unique(y$Current.Source.Question[grepl(str_split_i(column_name,"_",2), y$conceptId.2)]))
 
+
+table(flatM1schm_V1$long.Ending,flatM1schm_V1$common.v1v2)
+  #      0    1
+  # 0   79 1238
+  # 1   82   92  long.endings 174    
+  #          common
+unique(str_split_i(flatM1schm_V1$dup.var2.link[which(flatM1schm_V1$long.Ending==1 & flatM1schm_V1$common.v1v2==0)],"_",6))
+#[1] "206625031" (XX cancer diagnosis age) "261863326" (XX cancer diagnosis year)
+unique(str_split_i(flatM1schm_V1$dup.var2.link[which(flatM1schm_V1$long.Ending==1 & flatM1schm_V1$common.v1v2==0)],"_",2))
+#  [1] "142912472" "158354252" "158409298" "195363361" "209771602" "216840563" "247160067" "259089008" "271684775" "278159347"
+# [11] "312545873" "315987564" "384881609" "391972881" "483735587" "483975329" "514034680" "519974530" "529744595" "550722030"
+# [21] "558929585" "570279754" "654594205" "682651189" "700889863" "750994269" "774774759" "795003496" "845219872" "852278004"
+# [31] "860112841" "861788020" "907590067" "907776050" "938150507" "969177591" "990114799"
+
+# to merge with the mater DD by the unique link
+flatM1schm_V1_dd1 <- merge(flatM1schm_V1[which(flatM1schm_V1$conceptId.2 !=flatM1schm_V1$conceptId.3),],y[,c("conceptId.2","conceptId.3","Current.Source.Question","Current.Question.Text","Variable.Label")],by=c("conceptId.2","conceptId.3"))
+
+flatM1schm_V1_dd2 <- merge(flatM1schm_V1[which(flatM1schm_V1$conceptId.2 ==flatM1schm_V1$conceptId.3),], y[,c("conceptId.3","Current.Source.Question","Current.Question.Text","Variable.Label")],by="conceptId.3")
+
+flatM1schm_V1_dd0 <- merge(flatM1schm_V1[which(flatM1schm_V1$column_name %nin% c(flatM1schm_V1_dd1$column_name,flatM1schm_V1_dd2$column_name)),],unique(y[!is.na(y$conceptId.2),c("conceptId.2","Current.Source.Question")]), by="conceptId.2")
+
+flatM1schm_V1$column_name[which(flatM1schm_V1$column_name %nin% c(flatM1schm_V1_dd1$column_name,flatM1schm_V1_dd2$column_name,flatM1schm_V1_dd0$column_name))]
+#  [1] "COMPLETED"                         "COMPLETED_TS"                      "Connect_ID"                       
+#  [4] "D_355472178_BREASTDIS_D_138780721" "D_355472178_BREASTDIS_D_162512268" "D_412624121_D_412624121"          
+#  [7] "sha"                               "treeJSON"                          "uid"                              
+# [10] "date"  
+flatM1schm_V1_dd <- bind_rows(flatM1schm_V1[which(flatM1schm_V1$column_name %nin% c(flatM1schm_V1_dd1$column_name,flatM1schm_V1_dd2$column_name,flatM1schm_V1_dd0$column_name)),], flatM1schm_V1_dd0,flatM1schm_V1_dd1,flatM1schm_V1_dd2)
+
+unique(flatM1schm_V1$conceptId.3[which(flatM1schm_V1$column_name %nin% c(flatM1schm_V1_dd1$column_name,flatM1schm_V1_dd2$column_name))]) #those variables with the CIDs might be deprecated ones, which are not in the current DD: Question: are these variables (86 CIDs) be kept in the BQ2? if so, how to link them to the current CIDs or how to find their corresponding Questions and meaning?
+#  [1] "COMPLETED" "TS"        "Connect_I" "206625031" "261863326" "232595513" "614366597" "210004486" "473901019"
+# [10] "230633094" "962468280" "479548517" "591959654" "166195719" "861769692" "317093647" "138780721" "162512268"
+# [19] "300754548" "714712574" "260972338" "331562964" "388289687" "734800333" "412624121" "497018554" "694594047"
+# [28] "204067509" "883468127" "251231642" "727704681" "919193251" "747086784" "195093589" "618107598" "660424548"
+# [37] "677702321" "254709325" "543494377" "876238155" "668434958" "716502980" "987134866" "746038746" "745065357"
+# [46] "522161060" "957429734" "470282814" "637556277" "351965599" "895115511" "284580415" "870244556" "572909251"
+# [55] "367670682" "608469482" "445446905" "599063442" "650332509" "932489634" "574474707" "694973364" "sha"      
+# [64] "treeJSON"  "uid"       "date"
+
+unique(dd[grepl(paste(unique(flatM1schm_V1$conceptId.3[which(flatM1schm_V1$column_name %nin% c(flatM1schm_V1_dd1$column_name,flatM1schm_V1_dd2$column_name))]),collapse="|"),dd$CID),c("CID","Variable Label")])
+#          CID                                     Variable Label
+# 1: 195093589 Another type of cancer: Please describe [text box]
+# 2: 206625031                          Skin cancer diagnosis age
+# 3: 261863326                         Skin cancer diagnosis year
+# 4: 284580415                                     Address line 1
+# 5: 317093647                                               <NA>
+# 6: 677702321 Another type of cancer: Please describe [text box]
+# 7: 746038746                               Prefer not to answer
+# 8: 957429734 Another type of cancer: Please describe [text box]
+flatM1schm_V1_dd <- flatM1schm_V1_dd %>% 
+  mutate(varname_type = case_when(str_count(column_name,"D_|d_") < str_count(column_name,"_") & long.Ending==1 ~ paste(str_count(column_name,"D_|d_"),1,sep="_"),
+                                  str_count(column_name,"D_|d_") < str_count(column_name,"_") & long.Ending==0 ~ paste(str_count(column_name,"D_|d_"),2,sep="_"),
+                                  str_count(column_name,"D_|d_") == str_count(column_name,"_") & long.Ending==0 ~ paste(str_count(column_name,"D_|d_"),0,sep="_"))) 
+
+
+flatM1schm_V2<- flatM1schm_V2 %>% 
+  mutate(dup.var2.flag = ifelse(grepl(paste(dup.vars$column_name,collapse="|"),column_name), 1, 0),
+         dup.var2.link = case_when(str_count(column_name,"D_") < 3 & str_count(column_name,"_") < 8 ~ column_name,                                                                  str_count(column_name,"D_") <3 & str_count(column_name,"_") > 7 ~ substring(column_name,1,31),
+                                   str_count(column_name,"D_") >2 & str_split_i(column_name,"_D_",1) == paste0("D_",str_split_i(column_name,"_D_",2))  ~ paste0(str_split_i(column_name,"_D_",1),"_D_",str_split_i(column_name,"_D_",3))),
+         common.v1v2 = ifelse(column_name %in% flatM1schm_V1$column_name, 1,0),
+         conceptId.2 = str_split_i(column_name,"_",2),
+         conceptId.3 = substring(str_split_i(column_name,"D_|d_",-1),1,9))
+table(flatM1schm_V2$dup.var2.flag,flatM1schm_V2$long.Ending)
+  #  
+  #      0    1
+  # 0 1712    9
+  # 1  239  132
+   
+
+unique(str_split_i(flatM1schm_V2$dup.var2.link[which(flatM1schm_V2$long.Ending==1 & flatM1schm_V2$common.v1v2==0)],"_",6))  #[1] "206625031" "261863326"
+unique(str_split_i(flatM1schm_V2$dup.var2.link[which(flatM1schm_V2$long.Ending==1 & flatM1schm_V2$common.v1v2==0)],"_",2))
+#  [1] "116065851" "142912472" "158409298" "204425387" "209771602" "216840563" "247160067" "259089008" "278159347" "312545873"
+# [11] "315987564" "384881609" "483735587" "513077276" "514034680" "529744595" "570279754" "601211723" "654594205" "700889863"
+# [21] "750994269" "774774759" "852278004" "860112841" "861788020" "905145893" "907590067" "969177591" "990114799"                                                                                                                           
+flatM1schm_V2_dd1 <- merge(flatM1schm_V2[which(flatM1schm_V2$conceptId.2 !=flatM1schm_V2$conceptId.3),],y[,c("conceptId.2","conceptId.3","Current.Source.Question","Current.Question.Text","Variable.Label")],by=c("conceptId.2","conceptId.3"))
+
+flatM1schm_V2_dd2 <- merge(flatM1schm_V2[which(flatM1schm_V2$conceptId.2 ==flatM1schm_V2$conceptId.3),], y[,c("conceptId.3","Current.Source.Question","Current.Question.Text","Variable.Label")],by="conceptId.3")
+
+
+flatM1schm_V2_dd0 <- merge(flatM1schm_V2[which(flatM1schm_V2$column_name %nin% c(flatM1schm_V2_dd1$column_name,flatM1schm_V2_dd2$column_name)),],unique(y[,c("conceptId.2","Current.Source.Question")]), by="conceptId.2")
+
+dim(flatM1schm_V2[which(flatM1schm_V2$column_name %nin% c(flatM1schm_V2_dd1$column_name,flatM1schm_V2_dd2$column_name)),])
+#[1] 54 13 01/08/2024
+#[1] 49 15 01/09/2024
+flatM1schm_V2$column_name[which(flatM1schm_V2$column_name %nin% c(flatM1schm_V2_dd1$column_name,flatM1schm_V2_dd2$column_name,flatM1schm_V2_dd0$column_name))]
+#[1] "COMPLETED_TS" "Connect_ID" 0/1/8/2024
+# [1] "Connect_ID" 01/09/2024
+flatM1schm_V2_dd <- bind_rows(flatM1schm_V2[which(flatM1schm_V2$column_name %nin% c(flatM1schm_V2_dd1$column_name,flatM1schm_V2_dd2$column_name,flatM1schm_V2_dd0$column_name)),],flatM1schm_V2_dd0,flatM1schm_V2_dd1,flatM1schm_V2_dd2)  
+
+unique(flatM1schm_V2$conceptId.3[which(flatM1schm_V2$column_name %nin% c(flatM1schm_V2_dd1$column_name,flatM1schm_V2_dd2$column_name))])
+#  [1] "COMPLETED" "TS"        "Connect_I" "206625031" "261863326" "317093647" "426285737" "578895128" "195093589"
+# [10] "618107598" "660424548" "677702321" "254709325" "746038746" "957429734" "812370563" "284580415" "sha"       
+# [19] "treeJSON"  "uid"       "date"   01/06/2024
+# [1] "Connect_I" "206625031" "261863326" "317093647" "426285737" "578895128" "195093589" "618107598" "660424548"
+# [10] "254709325" "746038746" "957429734" "812370563" "284580415" "uid"       "date" 01/09/2024
+y[grepl("677702321",y$conceptId.3),c("conceptId.3","Current.Question.Text")]
+#      conceptId.3                                       Current.Question.Text
+# 2748   677702321 Mother - another type of cancer: Please describe [text box]
+unique(dd[grepl(paste(unique(flatM1schm_V2$conceptId.3[which(flatM1schm_V2$column_name %nin% c(flatM1schm_V2_dd1$column_name,flatM1schm_V2_dd2$column_name))]),collapse="|"),dd$CID),c("CID","Variable Label")])
+#           CID                                     Variable Label
+#  1: 195093589 Another type of cancer: Please describe [text box]
+#  2: 206625031                          Skin cancer diagnosis age
+#  3: 261863326                         Skin cancer diagnosis year
+#  4: 284580415                                     Address line 1
+#  5: 317093647                                               <NA>
+#  6: 578895128                                               <NA>
+#  7: 677702321 Another type of cancer: Please describe [text box]
+#  8: 746038746                               Prefer not to answer
+#  9: 812370563                                               <NA>
+# 10: 957429734 Another type of cancer: Please describe [text box]
+ 
+flatM1schm_V2_dd <- flatM1schm_V2_dd %>% 
+  mutate(varname_type = case_when(str_count(column_name,"D_|d_") < str_count(column_name,"_") & long.Ending==1 ~ paste(str_count(column_name,"D_|d_"),1,sep="_"),
+                                  str_count(column_name,"D_|d_") < str_count(column_name,"_") & long.Ending==0 ~ paste(str_count(column_name,"D_|d_"),2,sep="_"),
+                                  str_count(column_name,"D_|d_") == str_count(column_name,"_") & long.Ending==0 ~ paste(str_count(column_name,"D_|d_"),0,sep="_"))) 
+         
 length(flatM1schm_V1$dup.var2.link[which(dup.vars$column_name %in% flatM1schm_V1$dup.var2.link)])
-#[1] 134
-
+#[1] 146 01/08/2024
+# [1] 136
 select3 <- paste(flatM1schm_V1$column_name[which(grepl(paste(unique(c(dup.vars$column_name,dupM1V1.vars$matched.varnames1,dupM1V1.vars$matched.varnames2)),collapse="|"),flatM1schm_V1$column_name))],collapse=",") #153
 
 query11 <- bq_project_query(project, query=paste("SELECT Connect_ID,", select3, ", FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.module1_v1_JP`",sep=" "))
@@ -401,7 +522,8 @@ dup_v1.vars <-unique(compared[which(colnames(dup.dt12) %in% compared$variblename
 #12: D_142912472_6_6_D_261863326_6_6 D_142912472_6_6_D_261863326_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6_6
 #13: D_158354252_1_1_D_206625031_1_1                                               D_158354252_1_1_D_206625031_1_1
  
- 
+#to go through the whole set of schemas of each version of M1 on the variable names:
+
 
 ```
 
@@ -430,7 +552,7 @@ for (i in 1:length(flatM2schm_V2$column_name)){
 
 names(dupM2.vars) <- c("column_name","matched.varnames1","matched.varnames2") 
 
-dupM2.vars <- dupM2.vars[which(dupM2.vars$matched.varnames1 !=dupM2.vars$matched.varnames2), ]
+dupM2.vars1 <- dupM2.vars[which(dupM2.vars$matched.varnames1 != dupM2.vars$matched.varnames2), ]
 select1 <- paste(dupM2.vars$matched.varnames1,collapse=",")
 select2 <- paste(dupM2.vars$matched.varnames2,collapse=",")
 
@@ -494,12 +616,20 @@ empty_columns <- colSums(is.na(m2v1_dup.vars) | m2v1_dup.vars == "") == nrow(m2v
 
 
 ```{r, include=FALSE,eval=TRUE,echo=FALSE}}
-outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/Mia_Requests/AggregateTables/Outputs/"
+outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/"
 write.csv(dup.vars_dd1,paste(outputpath, "Module1_variables_sameCIDs_V1V2_check_",Sys.Date(),".csv",sep=""))
 write.csv(summary_m1v1dup,paste(outputpath, "Module1_version1_similiar_variable_check_summary_numeric_", Sys.Date(),".csv",sep=""))
 write.csv(summary_m1v2dup,paste(outputpath, "Module1_version2_similiar_variable_check_summary_numeric_", Sys.Date(),".csv",sep=""))
 write.csv(compared1,paste(outputpath, "Module1_version2_similiar_variable_data_", Sys.Date(),".csv",sep=""))
 write.csv(dupM2.vars_dd,paste(outputpath, "Module2_variables_sameCIDs_V1V2_check_",Sys.Date(),".csv",sep=""))
+
+#the schema with the masterDD explanations
+
+write.csv(flatM1schm_V1_dd, paste(outputpath, "Module1_V1_schema_variables_masterDD_check_",Sys.Date(),".csv",sep=""),row.names = F,quote = F,na=" ")
+write.table(flatM1schm_V1_dd, paste(outputpath, "Module1_V1_schema_variables_masterDD_check_",Sys.Date(),".txt",sep=""),sep="\t",row.names = F,quote = F,na=" ")
+
+write.csv(flatM1schm_V2_dd, paste(outputpath, "Module1_V2_schema_variables_masterDD_check_",Sys.Date(),".csv",sep=""),row.names = F,quote = F,na="")
+write.table(flatM1schm_V2_dd, paste(outputpath, "Module1_V2_schema_variables_masterDD_check_",Sys.Date(),".txt",sep=""),sep="\t",row.names = F,quote = F,na=" ")
 ```
 
 
