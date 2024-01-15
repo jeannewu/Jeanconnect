@@ -799,12 +799,15 @@ schema <- bigrquery::bq_table_download(schm_query,bigint = "character")
    
  write.table(paste0("SELECT Connect_ID,\n ",paste(sql.short,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"),paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_no_pii_Short_similar_query_coalesce_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) 
  }
+ 
   longtails.only <- schema$column_name[which(!duplicated(schema$var.pattern) & schema$long.Ending == 1 & schema$pii_cid3 !=1)]
+  
+ if(length(longtails.only >0)){ 
   sql.longrename <- filter(schema, column_name %in% longtails.only) %>% select(column_name,newname.long) %>%
     mutate(sql.txt= glue('{column_name} AS {newname.long}'))
   
   write.table(glue("SELECT Connect_ID,\n ",paste(sql.longrename$sql.txt,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"), paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_no_pii_LongTails_only_query_Renaming_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) 
-  
+ }
 
   return(schema)
 }
