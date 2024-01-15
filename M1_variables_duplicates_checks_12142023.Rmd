@@ -74,6 +74,7 @@ length(unique(dd$CID))
 #the master dd with more info. on the formats (levels)
 urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github
 y <- read.csv(urlfile)
+pii_cid <- y$conceptId.3[which(y$PII == "Yes")]
 #dd$labels.combo <- paste(dd$`Variable Label`,dd$`Variable Name`,sep="$")
  bq_auth()
 #The bigrquery package is requesting access to your Google account.
@@ -766,11 +767,12 @@ schema <- bigrquery::bq_table_download(schm_query,bigint = "character")
                                   str_count(column_name,"D_|d_") < str_count(column_name,"_") & long.Ending==0 ~ paste("Short",str_count(column_name,"D_|d_"),str_count(sapply(strsplit(column_name,"D_"),tail,1),"_"),sep="_"),
                                   str_count(column_name,"D_|d_") == str_count(column_name,"_") & long.Ending==0 ~ paste("Notails",str_count(column_name,"D_|d_"),sep="_")),
           conceptId.2 = str_split_i(column_name,"_",2),
-          conceptId.3 = ifelse(str_count(column_name,"_D_") >0, substring(str_split_i(column_name,"_D_",-1),1,9),NA)) 
+          conceptId.3 = ifelse(str_count(column_name,"_D_") >0, substring(str_split_i(column_name,"_D_",-1),1,9),NA),
+          pii_cid3 = ifelse(substring(str_split_i(column_name,"_D_",-1),1,9) %in% pii_cid, 1,0)) 
   #%>% filter(.,duplicated(schema$var.pattern)) %>% select(table_name, column_name,var.pattern,newname.long,varname_type)
  
-
-   dups.long <- schema$var.pattern[duplicated(schema$var.pattern) & grepl("Long",schema$varname_type)]
+   dups <- schema$var.pattern[duplicated(schema$var.pattern)]
+   dups.long <- schema$var.pattern[duplicated(schema$var.pattern) & grepl("Long",schema$varname_type) & schema$pii_cid3 !=1]
    
    #dup.vars.long <- schema %>% filter(.,var.pattern %in% dups) %>% select(column_name, varname_type, var.pattern) %>% pivot_wider(names_from = varname_type, values_from = column_name, values_fill = 0)       
    #dup_long <- dup.var.long[!is.na(long_2),]   
@@ -782,11 +784,11 @@ schema <- bigrquery::bq_table_download(schm_query,bigint = "character")
      sql.long <- c(sql.long,sql)
     }
    
- write.table(paste0("SELECT Connect_ID,\n ",paste(sql.txt,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"),paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_Long_similar_query_coalesce_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) #M1V2_Variable
+ write.table(paste0("SELECT Connect_ID,\n ",paste(sql.txt,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"),paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_no_pii_Long_similar_query_coalesce_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) #M1V2_Variable
  }
    
  ##to write the sql for "coalesce" the duplicate variables with short tails
- dups.short <- schema$var.pattern[duplicated(schema$var.pattern) & !grepl("Long|_0",schema$varname_type)]
+ dups.short <- schema$var.pattern[duplicated(schema$var.pattern) & !grepl("Long|_0",schema$varname_type) & schema$pii_cid3!=1]
  if(length(dups.short >0)){
  sql.short <- NULL
      for (i in 1:length(dups.short)){
@@ -795,15 +797,29 @@ schema <- bigrquery::bq_table_download(schm_query,bigint = "character")
      sql.short <- c(sql.short,sql)
     }
    
- write.table(paste0("SELECT Connect_ID,\n ",paste(sql.short,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"),paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_Short_similar_query_coalesce_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) 
+ write.table(paste0("SELECT Connect_ID,\n ",paste(sql.short,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"),paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_no_pii_Short_similar_query_coalesce_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) 
  }
-  longtails.only <- schema$column_name[which(!duplicated(schema$var.pattern) & schema$long.Ending == 1)]
+  longtails.only <- schema$column_name[which(!duplicated(schema$var.pattern) & schema$long.Ending == 1 & schema$pii_cid3 !=1)]
   sql.longrename <- filter(schema, column_name %in% longtails.only) %>% select(column_name,newname.long) %>%
     mutate(sql.txt= glue('{column_name} AS {newname.long}'))
   
-  write.table(glue("SELECT Connect_ID,\n ",paste(sql.longrename$sql.txt,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"), paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_LongTails_only_query_Renaming_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) 
+  write.table(glue("SELECT Connect_ID,\n ",paste(sql.longrename$sql.txt,collapse=",\n"), " \nFROM  `nih-nci-dceg-connect-prod-6d04.FlatConnect.",tb,"`"), paste0("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/",tb,"_no_pii_LongTails_only_query_Renaming_",Sys.Date(),".txt",sep=""), sep="\t",row.names = F,quote = F,col.names = F) 
+  
 
   return(schema)
 }
+  dups <- schema$var.pattern[duplicated(schema$var.pattern)]
+  schema_dup <- schema %>% filter(.,grepl(paste(dups,collapse="|"),column_name) | long.Ending==1)
+  
+  dups <- schema_m1v2$var.pattern[duplicated(schema_m1v2$var.pattern) & schema_m1v2$pii_cid3==1]
+# [1] "D_537137982_1_1_D_338020179_1" "D_537137982_2_2_D_338020179_2" "D_537137982_3_3_D_338020179_3" "D_537137982_4_4_D_338020179_4"
+# [5] "D_537137982_5_5_D_338020179_5" "D_537137982_6_6_D_338020179_6" "D_537137982_7_7_D_338020179_7" "D_537137982_8_8_D_338020179_8"
+# [9] "D_537137982_9_9_D_338020179_9"
+dd[grepl("338020179",dd$CID),]
+# A tibble: 1 × 3
+  # CID       `Variable Label`               `Variable Name`            
+  # <chr>     <chr>                          <chr>                      
+# 1 338020179 Sibling 1 age at death, number SrvBOH_Sib1AgeDeathNum_v1r0  
+
 ```
 
