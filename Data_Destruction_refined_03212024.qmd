@@ -1,0 +1,1358 @@
+---
+title: "Data_Destruction_refined_03212024"
+author: "JingWu"
+format: html
+editor: visual
+---
+
+## Connect Data Destructions
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+1.  General Info.
+
+    Connect_0902.01 Data Destruction_03132024.docx (<https://nih.app.box.com/file/839951579186?s=xys7j67pbliwaw4tpn4g7drn5hnmkmj7>)
+
+    1.  the workind data: data collected from or about a participant for Connect and includes samples and any data generated from analysis of samples.
+
+        a.  **the data to be destructed**;
+
+        <!-- -->
+
+        1.  "when a subject has been **withdrawn from the Connect protoco**l [**and**]{.underline} it has **been requested that their data be destroyed**. The term “withdrawn” is used as defined per a human subjects protocol (45-CFR-46, the “Common Rule”) under which a participant donated data and biospecimens for molecular characterization and it has been requested that their data held by the project be destroyed. This SOP is usually triggered because the subject withdraws consent but can also be driven by a decision of the IRB of record or a Principal Investigation"
+        2.  **“data” refers to all data collected** from or about a participant for Connect and includes samples and any data generated from analysis of samples
+        3.  the data of these participants are: all the survey data
+        4.  data of these participants to be retained: 'Biospecimen", "Box", and "Kit Assembly"
+
+        ***b. Data Destruction “Stub” Record: Retained data elements:***
+
+        1.  all the "Stub" variables are shown in the Table 1 (page4-6) which are from participants table
+
+    2.  Initial MVP scope for data destruction from DevOps (<https://github.com/episphere/connect/issues/640>)
+
+        1.  Create a service which runs daily to see if any participants are flagged with Data Destruction (831041022) = yes
+
+        > If destroy data categorical (883668444) = requested and signed (704529432) OR date data destroy requested \>60 old (269050420) then continue with destroy data
+
+        2.  Remove all data from Firestore except for identified "stub record" data. (section 3.1.2)
+
+        3.  After doing the data destruction, will update the value of variables\
+            912301837=884452262\
+            861639549=353358909
+
+```{r}
+#| echo: false
+library(DBI) #the higher level BQ for working
+library(bigrquery) 
+library(data.table) ###to write or read and data management 
+# library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management https://tidyselect.r-lib.org/reference/faq-external-vector.html
+library(dplyr) ###data management some functions are not available in the dplyr masked in the tidyverse
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+#library(sqldf) ##sql
+library(lubridate) ###date time it is already masked in 'tidyverse'
+library(ggplot2) ###plots
+library(ggrepel)
+library(ggpubr) ###for the publications of plots
+library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
+library(gridExtra)
+#library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tidyr)
+library(tinytex) #for pdf
+#library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html t
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+#library(summarytools) ##recommended not applied in this R code
+library(gmodels) ##recommended but not applied in this R code
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+#library(patchwork)
+library(rio)
+library(glue)
+```
+
+```{r}
+#| echo: false
+#to download the recruitment data and corresponding Connect master DD
+#options(knitr.table.format = "latex")
+currentDate <- Sys.Date()
+
+#dictionary <- rio::import("https://github.com/episphere/conceptGithubActions/blob/master/aggregateCopy.json",format = "json")
+dictionary <- rio::import("https://episphere.github.io/conceptGithubActions/aggregateCopy.json",format = "json")
+dd <- dplyr::bind_rows(dictionary,.id="CID")
+#dd <- dd[!duplicated(dd),] #remove 140duplicates
+#THIS TABLE HAS REPLICATED (CIDS+LABELS) WITH DIFFERENT VARIABLE NAMES,
+dd$`Variable Label` <- ifelse(is.na(dd$`Variable Label`), dd$`Variable Name`, dd$`Variable Label`)
+#dd <- as.data.frame.matrix(do.call("rbind",dictionary)) #3523, some CID and labels are linked to different variable names 
+
+#dd1 <- dd[!duplicated(dd[,c("CID","Variable Label")]),]
+length(unique(dd$CID))
+
+#the master dd with more info. on the formats (levels)
+urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github
+dd.y <- read.csv(urlfile)
+#dd$labels.combo <- paste(dd$`Variable Label`,dd$`Variable Name`,sep="$")
+ bq_auth()
+#The bigrquery package is requesting access to your Google account.
+#Select a pre-authorised account or enter '0' to obtain a new token.
+#Press Esc/Ctrl + C to cancel.
+
+  2 #: wuj12@nih.gov
+  
+  project <- "nih-nci-dceg-connect-prod-6d04"
+ billing <- "nih-nci-dceg-connect-prod-6d04" ##project and billing should be consistent
+  
+#03.22.2024 data practice prep:
+#  project <- "nih-nci-dceg-connect-dev"
+#  billing <- "nih-nci-dceg-connect-dev"
+  
+ #03.27.2024 data destruction stage:
+  #project <- "nih-nci-dceg-connect-stg-5519"
+  #billing <- "nih-nci-dceg-connect-stg-5519"
+
+
+
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "FlatConnect",
+  billing = billing
+)
+
+dbListTables(con)
+
+outputpath <-"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Routputs/"
+
+
+#d_773707518 == 353358909 (HIPAA revocation flag) & d_747006172 == 353358909 (withdrawal flag) & d_831041022 == 353358909 (data destruction request),"Data Destruction"
+
+fun.dtquery <- function(project,y,x,select){
+    
+    query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT b.",select," FROM `",project,".",y,".",x,"` b
+INNER JOIN `",project,".Connect.participants` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
+WHERE p.d_773707518 = 353358909  and p.d_747006172 = 353358909 and p.d_831041022 = 353358909 \")",sep="")))
+    tb <- bq_table_download(query,bigint="integer64",n_max = Inf, page_size = 500)
+    return(tb)
+}
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+#|echo: False
+#|eval: True
+#based on Madhuri and Amelia's updated biospecimen variable list, update the stub variables on the biospecimen part:
+
+stub.cids <- unique(c("pin", "token", "state.studyId", "Connect_ID", "471168198", "436680969", "736251808", "480305327", "399159511", "231676651", "996038075", "506826178", "query.firstName", "query.lastName",  "371067537", "564964481", "795827569", "544150384", "827220437", "919254129", "454205108", "454445267", "821247024", "914594314", "558435199", "412000022", "262613359", "699625233", "773707518", "747006172", "659990606", "299274441", "457532784", "919699172", "153713899", "577794331", "613641698", "407743866", "765336427", "826240317", "479278368", "693626233", "831041022", "269050420", "524352591", "902332801", "359404406", "883668444", "119449326", "304438543", "104278817", "268665918", "744604255", "592227431", "861639549", "912301837",  "731498909", "787567527", "222373868", "648936790", "297462035", "648228701", "438636757", "130371375", "320023644", "265193023", "222161762", "253883960", "764863765", "547363263", "195145666", "459098666", "217640691", "220186468", "784810139", "320303124", "843688458", "949302066", "517311251", "536735468", "832139544", "976570371", "770257102", "663265240", "264644252", "126331570", "315032037", "173836415","167958071","684635302","878865966","526455436","331584571","840048338","135591601","343048998")) #87
+
+# to check the refusal and withdrawal reasons:
+##919699172, all reasons for refusal and withdrawal responses that fall within the variable level are retained.
+dd.y[grepl("919699172",y$conceptId.3),c("conceptId.3","Variable.Label","Current.Source.Question")]
+#      conceptId.3       Variable.Label Current.Source.Question
+# 1504   919699172 No Longer Interested   
+
+refwd_reasons <- c("Connect_ID","d_919699172","d_141450621","d_576083042","d_431428747","d_121430614","d_523768810","d_639172801","d_175732191","d_150818546","d_624030581","d_285488731","d_596510649","d_866089092","d_990579614","d_131458944","d_372303208","d_777719027","d_620696506","d_352891568","d_958588520","d_875010152","d_404289911","d_538619788","d_734828170","d_715390138")
+
+
+#y[grepl("831041022|883668444|704529432|269050420|912301837|861639549",y$conceptId.3),c("conceptId.2","conceptId.3","Variable.Label","Variable.Name","Current.Source.Question","Current.Question.Text")]
+#conceptId.3       Variable.Label      Variable.Name          Current.Question.Text
+#831041022            Data Dest        HdWd_Destroydata_v1r0   Destroy data                     
+#883668444   Data Dest Category     HdWd_DestroyDataCat_v1r0   Destroy Data Categorical  (457944265,111959410,704529432)       
+#861639549   Data Has Been Dest HdWd_DataHasBnDestroyed_v1r0   Data Has Been Destroyed                     
+#269050420    D/T Data Dest Req   HdRef_DateDatadestroy_v1r0   Autoset when HdWd_Destroydata_v1r0 selected                     
+#912301837 Participation status        SMMet_PartStatus_v1r0   Disposition codes for participation status 
+
+all.selected <- unique(c(stub.cids, gsub("d_","",refwd_reasons)))
+
+
+
+# to check the concepts of each stub.cids in the master DD (just to double check)
+
+dd_stud_cids <- filter(dd.y, grepl(paste(all.selected,collapse = "|"),conceptId.3)) %>% group_by(conceptId.3) %>% distinct(conceptId.3,.keep_all = TRUE)
+
+
+#to check the stub variables in each dataset of each enviroment
+#project <- "nih-nci-dceg-connect-prod-6d04"
+#billing <- "nih-nci-dceg-connect-prod-6d04" ##project and billing should be consistent
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "Connect",
+  billing = billing
+)
+
+#to check the stub variables in each dataset in Connect/FlatConnect
+flatdatasets <- dbListTables(con)
+
+
+stub_flat <- NULL
+for (t in c(1:length(flatdatasets))){
+    x<- flatdatasets[t]
+    print(x)
+    
+    query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT * FROM `",project,".Connect`.
+                                 INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='",x,
+                                    "'\")",sep="")))
+    schema         <- bigrquery::bq_table_download(query, bigint = "integer64")
+    
+    schema1 <- filter(schema,!grepl("key|error",field_path)) %>% 
+        mutate(stub_var = ifelse(grepl(paste(all.selected,collapse = "|"),field_path), 1,
+                                 ifelse(field_path %in% c("pin", "token", "state.studyId", "Connect_ID","query.firstName", "query.lastName"),1,0)))
+    
+    schema_stubs <- dplyr::filter(schema1,(grepl(paste(all.selected,collapse="|"), field_path) & !grepl("STRUCT",data_type)))  
+    print(dim(schema_stubs))
+    print(schema_stubs$field_path)
+    stub_flat <- bind_rows(stub_flat,schema_stubs)%>% select(table_catalog,table_schema,table_name,field_path, column_name,stub_var)
+} 
+
+
+##datasets: cancerOccurrence and mouthwash_v1 are null right now 03/19/2024
+#kitAssembly should be retained
+#to check whether these stub variables are retained on those refusal and withdrawal Connect_IDs in each dataset
+for (t in c(1:2,4:13,15:18)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    print(x)
+    select <- paste(stub_flat$field_path[which(stub_flat$table_name==flatdatasets[t])],collapse=",b.")
+    tmp <- fun.dtquery(project,y,x,select)
+    tmp <- as.data.frame(tmp)
+    
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)))
+    names(dt) <- c("dataName","Obs","Total.Vars") 
+    #dt_destr <- bind_rows(dt,dt_destr)
+    #dt_destruction[[t]] <- tmp
+    
+}
+
+# [1] "bioSurvey_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 1 1
+# [1] "biospecimen_JP"
+# Job complete
+# Billed: 0 B
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 2 3
+# [1] "cancerOccurrence_JP"
+# Job complete
+# Billed: 35.65 MB
+# [1] 0 2
+# [1] "clinicalBioSurvey_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 1 1
+# [1] "covid19Survey_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# [1] 0 1
+# [1] "menstrualSurvey_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# [1] 0 1
+# [1] "module1_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 3 1
+# [1] "module1_v2_JP"
+# Job complete
+# Billed: 0 B
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 29  1
+# [1] "module2_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 2 1
+# [1] "module2_v2_JP"
+# Job complete
+# Billed: 35.65 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 6 1
+# [1] "module3_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 5 1
+# [1] "module4_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 17  3
+# [1] "participants_JP"
+# Job complete
+# Billed: 0 B
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1]  41 177
+# [1] "participants_noPII_JP"
+# Job complete
+# Billed: 1.06 GB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1]  41 136
+# [1] "promis_v1_JP"
+# Job complete
+# Billed: 35.65 MB
+# [1] 0 1
+# [1] "sendgridTracking_JP"
+# Job complete
+# Billed: 37.75 MB
+# Downloading first chunk of data.
+# First chunk includes all requested rows.
+# [1] 69  2
+
+#write.csv(stub_flat,paste(outputpath,"Data_Destruction_Connect_datasets_Stubs_variables_list_availability",Sys.Date(),".csv",sep=""),row.names=F,na="")
+```
+
+query functions for checking the data of those Connect_ID with data destructions.
+
+```{r}
+
+  ##to be applied for the datasets except participants table,biospecimen, boxes, and Kit Assemble table for the data destruction.
+fun.query_id  <- function(y,x,select,id){
+  
+id1 <- paste(id,collapse=",")
+query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT ", select," FROM `",project,".",y,".",x, "` where cast(Connect_ID as int64) in (",id1,")\")",sep="")))
+
+tb_id <- bq_table_download(query,bigint="integer64",n_max = Inf, page_size = 500)  
+tmp<- tb_id %>% mutate(dataname= x)
+return(tmp)
+}
+
+
+
+fun.dtquery <- function(x,select){
+  
+  query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT b.",select," FROM `nih-nci-dceg-connect-dev.Connect.",x,"` b INNER JOIN `nih-nci-dceg-connect-dev.Connect.participants` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
+WHERE p.d_773707518 = 353358909  and p.d_747006172 = 353358909 and p.d_831041022 = 353358909 \")",sep="")))
+  tb <- bq_table_download(query,bigint="integer64",n_max = Inf, page_size = 500)
+  return(tb)
+}
+
+#select0 <- paste(stub_flat$field_path[which(stub_flat$stub_var==1 & stub_flat$table_name=="participants")],collapse = ",b.")
+
+fun0.dtquery <- function(y,x,select){
+  
+  query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT b.",select," FROM `nih-nci-dceg-connect-prod-6d04.",y,".",x,"` b INNER JOIN `nih-nci-dceg-connect-prod-6d04.Connect.participants` p ON cast(b.Connect_ID as int64)= cast(p.Connect_ID as int64)
+WHERE p.d_773707518 = 353358909  and p.d_747006172 = 353358909 and p.d_831041022 = 353358909 \")",sep="")))
+  tb <- bq_table_download(query,bigint="integer64",n_max = Inf, page_size = 500)
+  return(tb)
+}
+#
+
+```
+
+```{r}
+
+part_var <- bq_project_query(project, query=glue("SELECT * FROM  `",{project},".Connect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants'"))
+partvar          <- bigrquery::bq_table_download(part_var, bigint = "integer64")
+
+recr_var <- bq_project_query(project, query=glue("SELECT * FROM  `",{project},".FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants_JP'"))
+
+recrvar          <- bigrquery::bq_table_download(recr_var, bigint = "integer64")
+
+partvar1 <- filter(partvar,!grepl("key|error",field_path)) %>% 
+  mutate(stub_var = ifelse(grepl(paste(all.selected,collapse = "|"),field_path), 1,
+                          ifelse(field_path %in% c("pin", "token", "state.studyId", "Connect_ID","query.firstName", "query.lastName"),1,0)))
+
+partvar1 <- partvar1 %>% 
+    mutate(stub_cid = case_when(stub_var==1 & !grepl("d_",field_path) ~ gsub(".integer|.string|.provided","",field_path),
+                                stub_var==1 & grepl("d_",field_path) & grepl(paste(all.selected,collapse = "|"),description) ~ description,
+                                stub_var==1 & grepl("d_",field_path) & !grepl(paste(all.selected,collapse = "|"),description) ~ substring(str_split_i(field_path,"d_",2),1,9),
+                                stub_var==0 ~ NA)) #161
+participants_stubs <- dplyr::filter(partvar1,(grepl(paste(all.selected,collapse="|"), field_path) & !grepl("STRUCT",data_type)))  #162
+
+participants_stubs1 <- merge(participants_stubs, dd.y[,c("conceptId.2","conceptId.3", "Variable.Label","Variable.Name","Current.Source.Question","Current.Question.Text")], by.x="description",by.y="conceptId.3",all.x=TRUE) %>% as_tibble() %>% 
+    mutate(select = ifelse(is.na(conceptId.2),1,ifelse(str_count(field_path,as.character(conceptId.2)) > 0, 1,0))) %>% filter(.,select==1) %>% group_by(field_path) %>% arrange(field_path) %>% distinct(field_path,.keep_all = TRUE)
+
+#write.csv(participants_stubs1,paste(outputpath,"Data_Destruction_Connect_Prod_Participants_Stubs_variables_list",Sys.Date(),".csv",sep=""),row.names=F,na="")
+
+recrvar <- recrvar %>% 
+    mutate(stub_var = ifelse(grepl("state_studyId",field_path), 1, ifelse(grepl(paste(all.selected,collapse = "|"),field_path), 1,0)),
+            CID.1st = ifelse(str_count(column_name,"d_")==0, column_name, substring(str_split_i(column_name,"d_",2),1,9)),               
+            stub_cid = case_when(grepl(paste(all.selected,collapse = "|"),field_path) & (!grepl("d_",field_path) | grepl("state_studyId",field_path)) ~ gsub(".integer|.string|.provided","",field_path),
+                                 grepl(paste(all.selected,collapse = "|"),field_path) & grepl("d_",field_path) & !grepl("state_studyId",field_path) ~  substring(str_split_i(field_path,"d_",2),1,9),
+                                 !grepl(paste(all.selected,collapse = "|"),field_path) ~ NA),
+           stub_cid_130371375 =ifelse(grepl("130371375",field_path) & grepl(paste(all.selected,collapse = "|"),field_path), str_split_i(field_path,"_",-1),NA)) #152
+
+partvar1$stub_cid[partvar1$stub_cid %nin% recrvar$stub_cid]
+partvar1 <- partvar1 %>% mutate(query_var = ifelse(grepl(".", field_path),paste(field_path, "AS",gsub("\\.","_",field_path),sep=" "), paste(field_path, "AS",field_path,sep=" ")))
+
+
+# to check the availability of the Stub variables in each data
+#1. Participant that has data for everything (notifications, all research biospeicmens collected/shipped/received, all surveys submitted, menstrual cycle survey submitted, 9 digit SSN submitted, submitted all samples, incentive issued, and then requested data destruction). After Jessica runs the program, we need to make sure that the only variables retained are stub record vars.
+
+
+veri.cs <- c("471168198", "436680969", "736251808", "480305327", "399159511", "231676651", "996038075", "506826178", "query.firstName", "query.lastName",  "371067537", "564964481", "795827569", "544150384", "827220437", "919254129", "454205108", "454445267", "821247024", "914594314", "558435199", "412000022", "262613359", "699625233") 
+
+biospe.svy <- c("265193023", "222161762", "253883960", "764863765", "547363263", "195145666")
+biospe.coll <- "173836415"
+
+rf_wd <- c("773707518", "747006172", "659990606","299274441", "457532784", "919699172", "153713899", "577794331", "613641698", "407743866", "765336427", "826240317", "479278368", "693626233", "831041022", "269050420", "524352591", "902332801", "359404406", "883668444", "119449326", "304438543", "104278817", "268665918", "744604255", "592227431", "861639549", "912301837","141450621","576083042","431428747","121430614","523768810","639172801","175732191","150818546","624030581","285488731","596510649","866089092","990579614","131458944","372303208","777719027","620696506","352891568","958588520","875010152","404289911","538619788","734828170","715390138")
+
+modules <- c("949302066", "517311251", "536735468", "832139544", "976570371", "770257102", "663265240", "264644252")
+
+ssn <- c("126331570", "315032037")
+
+incentive <- "130371375"
+# Autogenerated date/time when mouthwash survey completed	195145666
+# Menstrual cycle survey completion flag	459098666
+# Autogenerated date/time when menstrual cycle survey completed	217640691
+# COVID-19 survey completion flag	220186468
+#  Autogenerated date/time when COVID-19 survey completed	784810139
+# 3-month Quality of Life (PROMIS) survey completion flag	320303124
+# Autogenerated date/time when PROMIS survey completed	843688458
+
+#Notes: 3/21 - all 4 baseline mods submitted, 9 digit SSN submitted, Kathleen collected reseach specimens, BUM survey submitted, Menstrual cycle survey submitted, COVID 19 survey submitted, emailed NORC to send incentive
+
+ids1 <- 4909788923
+check1 <- fun.query_id("FlatConnect","participants_JP","*",id)
+check1_stubs <- check1 %>% select(contains(all.selected)) 
+check1_stud_dd <- merge(check1_stubs, y[,c("conceptId.2","conceptId.3", "Variable.Label","Variable.Name","Current.Source.Question","Current.Question.Text")], by.x="description",by.y="conceptId.3",all.x=TRUE) %>% as_tibble() %>% 
+    mutate(select = ifelse(is.na(conceptId.2),1,ifelse(str_count(field_path,as.character(conceptId.2)) > 0, 1,0))) %>% filter(.,select==1) %>% group_by(field_path) %>% arrange(field_path) %>% distinct(field_path,.keep_all = TRUE)
+
+print(check1_stud_dd[,colSums(is.na(check1_stud_dd)) == 0])
+
+#submitted 4-digit SSN
+ids2 <- 9075819798 # check the SSN variable
+check2 <- fun.query_id("FlatConnect","participants_JP","*",id)
+check2_stubs <- check2 %>% select(contains(all.selected)) 
+print(check2_stubs[,colSums(is.na(check2_stubs)) == 0]) # d_126331570. 972455046        0=Not Started
+table(check2_stubs$d_126331570)
+
+#collected clinical biospec
+ids3 <- 2439773975
+check3 <- fun.query_id("FlatConnect","participants_JP","*","2439773975")
+check3_bioclinic <- check3 %>% select(Connect_ID,token,pin,studyId,contains(c("173836415","studyId")))
+
+#completed module 1, and some of mods 2&3 
+#modules <- c(d_949302066,d_517311251,d_536735468,d_832139544,d_976570371,d_770257102,d_663265240,d_264644252)
+ids4 <- 7048008033
+check4 <- fun.query_id("FlatConnect","participants_JP","*",ids4)
+check4_stubs <- check4 %>% select(contains(all.selected))
+check4_modules <- check4 %>% select(Connect_ID,token,pin,contains("studyId"),d_949302066,d_517311251,d_536735468,d_832139544,d_976570371,d_770257102,d_663265240,d_264644252)
+
+
+
+
+#Participant that is verified but has not completed any surveys (no biospecimens).  Then requests data destruction before 3pm ET same day.
+ids5 <- 7053168144
+check5 <- fun.query_id("FlatConnect","participants_JP","*",ids5)
+check5_stubs <- check5 %>% select(contains(all.selected))
+print(check5[,grepl(paste(veri.cs,collapse="|"),names(check5)),])
+
+# 
+#Participant that is verified but has not given any samples (no surveys). Then requests data destruction.
+ids6 <- 2242285934
+check6 <- fun.query_id("FlatConnect","participants_JP","*",ids6)
+check6_stubs <- check6 %>% select(contains(all.selected))
+print(check6[,grepl(paste(veri.cs,collapse="|"),names(check6)),])
+
+#kit shipped, not received back
+ids7 <- 9217339842
+check7 <- fun.query_id("FlatConnect","participants_JP","*",ids7)
+check7_stubs <- check7 %>% select(contains(all.selected))
+print(check7[,grepl(paste(veri.cs,collapse="|"),names(check7)),])
+
+#Participant that is verified and we send a MW kit and we do receive the kit back (no surveys). They then request data destruction.
+ids8 <- 1572333109
+check8 <- fun.query_id("FlatConnect","participants_JP","*",ids8)
+check8_stubs <- check8 %>% select(contains(all.selected))
+print(check8[,grepl(paste(veri.cs,collapse="|"),names(check8)),])
+
+
+#Reuse participant 1: Participant signs data destruction form
+ids9 <- 4909788923
+check9 <- fun.query_id("FlatConnect","participants_JP","*",ids9)
+check9_stubs <- check9 %>% select(contains(all.selected))
+print(check9[,grepl(paste(veri.cs,collapse="|"),names(check9)),])
+
+ids10 <- 9075819798
+check10 <- fun.query_id("FlatConnect","participants_JP","*",ids10)
+check10_stubs <- check10 %>% select(contains(all.selected))
+print(check10_stubs[,grepl(paste(veri.cs,collapse="|"),names(check10_stubs))])
+
+# based on the list of Connect_ID in the data destruction sheet in 10 scenerio:
+id <- c('4909788923','2378017635') # #1 & #5
+check1 <- fun.query_id("FlatConnect","participants_JP","*",id)
+check1_stub <- check1 %>% select(contains(all.selected))
+
+
+#partvar1 <- partvar1 %>% mutate(query_var = ifelse(grepl(".", field_path),paste(field_path, "AS",gsub("\\.","_",field_path),sep=" "), paste(field_path, "AS",field_path,sep=" ")))
+
+#to write a sql code to check bigquery;
+##struct data type:
+#struct_var <- paste(partvar1$query_var[grepl("\\.",partvar1$field_path)],collapse=",\n")
+
+#write.table(paste(m2_v1.only,collapse=", \nv1."),"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/M2_V1only_variables_11202023.txt", sep="\t",row.names = F,quote = F,col.names = F)
+
+```
+
+From Jessica's tables in Box:
+
+DataDestruction-TestResult-60days - <https://app.box.com/s/1bddjnqlqxnuszwstas24amtpxdtb34e>
+
+DataDestruction-TestResult-RequestedAndSigned - <https://app.box.com/s/x669nuw4ayulvy465anuv5w2n2uughis>
+
+DataDestruction-TestResult-RequestedNotSignedNot60days - <https://app.box.com/s/a8gj42ihtfocv1zjdwd22k5m84o3ps5f>
+
+```{r}
+ls1 <- gsub("\n    ","'",ls1)
+ls1 <- gsub("consentFirstName", "'consentFirstName",ls1)
+```
+
+```{python}
+import pandas as pd
+import json
+import csv
+import numpy as np
+
+#df =open("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Jessica_dd_list.txt",sep='\t', lineterminator='\r')
+file = "~/Documents/CONNECT_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Jessica_dd_list.txt"
+fd = open(file, "r") 
+#Lines = fd.readlines()
+
+#print(type(ls2))
+#dd_list <- pd.DataFrame(ls1)
+```
+
+```{python}
+import pandas as pd
+import json
+import csv
+import numpy as np
+
+df =pd.read_txt("~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Jessica_dd_list.txt")
+
+
+#dt = {"100767870":104430631,"113579866":"","121430614":104430631,"123868967":"","126331570":972455046,"130371375":{"266600170":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"303552867":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"496823485":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"650465111":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631}},"131458944":104430631,"141450621":104430631,"142654897":{"177402915":104430631,"196856782":104430631,"206879104":104430631,"241590841":104430631,"285130077":104430631,"326825649":104430631,"461488577":104430631,"462314689":353358909,"520301146":104430631,"549687190":104430631,"607081902":104430631,"639721694":104430631,"642287621":104430631,"684726272":104430631,"791389099":104430631,"819377306":104430631,"829269606":104430631,"942255248":104430631,"967372009":104430631},"150818546":104430631,"153713899":104430631,"167958071":104430631,"175732191":104430631,"220186468":972455046,"230663853":353358909,"253883960":972455046,"262613359":"2024-03-24T13:53:02.380Z","265193023":972455046,"269050420":"2024-03-24T14:06:02.540Z","285488731":104430631,"311580100":104430631,"320303124":789467219,"335767902":"2024-03-24T13:50:43.000Z","352891568":104430631,"359404406":104430631,"372303208":104430631,"404289911":104430631,"412000022":"NCI_HIPAA_V0.02","421823980":"datadestruction@mailinator.com","431428747":104430631,"451953807":353358909,"454205108":"NCI_Consent_V0.05","454445267":"2024-03-24T13:53:02.380Z","459098666":972455046,"471168198":"data","471593703":"2024-03-24T13:50:59.533Z","507120821":596523216,"512820379":854703046,"523768810":104430631,"524352591":{"524352591":807835037},"526455436":104430631,"536735468":972455046,"538619788":104430631,"547363263":972455046,"558435199":353358909,"576083042":104430631,"596510649":104430631,"620696506":104430631,"624030581":104430631,"637147033":104430631,"639172801":104430631,"659990606":"","663265240":972455046,"664453818":"","684635302":104430631,"685002411":{"194410742":104430631,"217367618":104430631,"277479354":104430631,"352996056":104430631,"688142378":104430631,"867203506":104430631,"936015433":104430631,"949501163":104430631,"994064239":104430631},"699625233":104430631,"734828170":104430631,"736251808":"destruction","747006172":353358909,"773707518":353358909,"777719027":104430631,"821247024":197316935,"827220437":13,"828729648":353358909,"831041022":353358909,"861639549":104430631,"866089092":104430631,"875010152":104430631,"878865966":104430631,"883668444":111959410,"906417725":104430631,"912301837":241236037,"914594314":"2024-03-24T14:01:49Z","914639140":104430631,"919254129":353358909,"919699172":104430631,"948195369":104430631,"949302066":972455046,"958588520":104430631,"976570371":972455046,"982402227":"20240324","987563196":104430631,"990579614":104430631,"995036844":"password","state":{"158291096":104430631,"706283025":{"163284008":104430631,"163534562":104430631,"196038514":104430631,"208102461":104430631,"209509101":104430631,"211023960":104430631,"260703126":104430631,"331787113":104430631,"347614743":104430631,"363026564":104430631,"377633816":104430631,"381509125":104430631,"387198193":104430631,"400259098":104430631,"405352246":104430631,"415693436":"","491099823":104430631,"496935183":104430631,"497530905":104430631,"517101990":104430631,"535928798":104430631,"566047367":104430631,"579618065":104430631,"627995442":104430631,"702433259":104430631,"705732561":104430631,"719451909":104430631,"744197145":104430631,"755545718":104430631,"771146804":104430631,"831137710":104430631,"836460125":104430631,"873405723":104430631,"897366187":104430631,"950040334":104430631},"875549268":104430631,"uid":"ZLv7285fMiYegCRfkxV0uSMjKrd2"},"token":"e155877c-709e-4e50-b2e8-eca2a419da40","Connect_ID":5468989193,"query":{"firstName":["data"],"lastName":["destruction"]}}
+#dt0 =pd.DataFrame(dt)
+#dt0.to_csv('~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Jessica_Connect_IDs_to_deleted_03252024.csv',index=False)
+
+#dt1 = {"100767870":104430631,"113579866":"","121430614":104430631,"123868967":"","126331570":972455046,"130371375":{"266600170":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"303552867":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"496823485":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"650465111":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631}},"131458944":104430631,"141450621":104430631,"142654897":{"177402915":104430631,"196856782":104430631,"206879104":104430631,"241590841":104430631,"285130077":104430631,"326825649":104430631,"461488577":104430631,"462314689":104430631,"520301146":104430631,"549687190":104430631,"607081902":104430631,"639721694":104430631,"642287621":104430631,"684726272":104430631,"791389099":104430631,"819377306":104430631,"829269606":104430631,"942255248":104430631,"967372009":104430631},"150818546":104430631,"153713899":104430631,"167958071":104430631,"175732191":104430631,"220186468":972455046,"230663853":353358909,"253883960":972455046,"262613359":"2024-03-24T14:15:23.122Z","265193023":972455046,"269050420":"2024-03-24T14:22:29.845Z","285488731":104430631,"311580100":104430631,"320303124":789467219,"335767902":"2024-03-24T14:13:53.000Z","352891568":104430631,"359404406":104430631,"372303208":104430631,"404289911":104430631,"412000022":"NCI_HIPAA_V0.02","421823980":"ddrequestandsign@mailinator.com","431428747":104430631,"451953807":353358909,"454205108":"NCI_Consent_V0.05","454445267":"2024-03-24T14:15:23.122Z","459098666":972455046,"471168198":"datadestruction","471593703":"2024-03-24T14:13:58.108Z","507120821":596523216,"512820379":854703046,"523768810":104430631,"524352591":{"524352591":807835037},"526455436":104430631,"536735468":972455046,"538619788":104430631,"547363263":972455046,"558435199":353358909,"576083042":104430631,"596510649":104430631,"620696506":104430631,"624030581":104430631,"637147033":104430631,"639172801":104430631,"659990606":"","663265240":972455046,"664453818":"","684635302":104430631,"685002411":{"194410742":104430631,"217367618":104430631,"277479354":104430631,"352996056":104430631,"688142378":104430631,"867203506":104430631,"936015433":104430631,"949501163":104430631,"994064239":104430631},"699625233":104430631,"734828170":104430631,"736251808":"requestandsign","747006172":353358909,"773707518":353358909,"777719027":104430631,"821247024":197316935,"827220437":13,"828729648":353358909,"831041022":353358909,"861639549":104430631,"866089092":104430631,"875010152":104430631,"878865966":104430631,"883668444":111959410,"906417725":104430631,"912301837":241236037,"914594314":"\t2024-03-24T14:01:49Z","914639140":104430631,"919254129":353358909,"919699172":104430631,"948195369":104430631,"949302066":972455046,"958588520":104430631,"976570371":972455046,"982402227":"20240324","987563196":104430631,"990579614":104430631,"995036844":"password","state":{"158291096":104430631,"706283025":{"163284008":104430631,"163534562":104430631,"196038514":104430631,"208102461":104430631,"209509101":104430631,"211023960":104430631,"260703126":104430631,"331787113":104430631,"347614743":104430631,"363026564":104430631,"377633816":104430631,"381509125":104430631,"387198193":104430631,"400259098":104430631,"405352246":104430631,"415693436":"","491099823":104430631,"496935183":104430631,"497530905":104430631,"517101990":104430631,"535928798":104430631,"566047367":104430631,"579618065":104430631,"627995442":104430631,"702433259":104430631,"705732561":104430631,"719451909":104430631,"744197145":104430631,"755545718":104430631,"771146804":104430631,"831137710":104430631,"836460125":104430631,"873405723":104430631,"897366187":104430631,"950040334":104430631},"875549268":104430631,"uid":"BTwdIzdmVGW5QetZVsT2roetP3S2"},"token":"dbc49271-f427-46f4-8bec-31cd566c3d68","Connect_ID":6674469060,"query":{"firstName":["datadestruction"],"lastName":["requestandsign"]}}
+#dt1_df =pd.DataFrame(dt1)
+#dt1_df.to_csv('~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Jessica_Connect_ID6674469060_to_deleted_03252024.csv',index=False
+
+#dt2 = {"100767870":104430631,"113579866":"","121430614":104430631,"123868967":"","126331570":972455046,"130371375":{"266600170":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"303552867":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"496823485":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631},"650465111":{"222373868":104430631,"297462035":"","320023644":"","438636757":"","648228701":104430631,"648936790":104430631,"731498909":104430631}},"131458944":104430631,"141450621":104430631,"142654897":{"177402915":104430631,"196856782":104430631,"206879104":104430631,"241590841":104430631,"285130077":104430631,"326825649":104430631,"461488577":104430631,"462314689":104430631,"520301146":104430631,"549687190":104430631,"607081902":104430631,"639721694":104430631,"642287621":104430631,"684726272":104430631,"791389099":104430631,"819377306":104430631,"829269606":104430631,"942255248":104430631,"967372009":104430631},"150818546":104430631,"153713899":104430631,"167958071":104430631,"175732191":104430631,"220186468":972455046,"230663853":353358909,"253883960":972455046,"262613359":"2024-03-24T14:28:55.254Z","265193023":972455046,"269050420":"2024-03-24T14:35:45.241Z","285488731":104430631,"311580100":104430631,"320303124":789467219,"335767902":"2024-03-24T14:25:35.000Z","352891568":104430631,"359404406":104430631,"372303208":104430631,"404289911":104430631,"412000022":"NCI_HIPAA_V0.02","421823980":"dd60days@mailinator.com","431428747":104430631,"451953807":353358909,"454205108":"NCI_Consent_V0.05","454445267":"2024-03-24T14:28:55.254Z","459098666":972455046,"471168198":"datadestruction","471593703":"2024-03-24T14:25:39.634Z","507120821":596523216,"512820379":854703046,"523768810":104430631,"524352591":{"524352591":807835037},"526455436":104430631,"536735468":972455046,"538619788":104430631,"547363263":972455046,"558435199":353358909,"576083042":104430631,"596510649":104430631,"620696506":104430631,"624030581":104430631,"637147033":104430631,"639172801":104430631,"659990606":"","663265240":972455046,"664453818":"","684635302":104430631,"685002411":{"194410742":104430631,"217367618":104430631,"277479354":104430631,"352996056":104430631,"688142378":104430631,"867203506":104430631,"936015433":104430631,"949501163":104430631,"994064239":104430631},"699625233":104430631,"734828170":104430631,"736251808":"sixtydays","747006172":353358909,"773707518":353358909,"777719027":104430631,"821247024":197316935,"827220437":13,"828729648":353358909,"831041022":353358909,"861639549":104430631,"866089092":104430631,"875010152":104430631,"878865966":104430631,"883668444":111959410,"906417725":104430631,"912301837":241236037,"914594314":"\t2024-03-24T14:01:49Z","914639140":104430631,"919254129":353358909,"919699172":104430631,"948195369":104430631,"949302066":972455046,"958588520":104430631,"976570371":972455046,"982402227":"20240324","987563196":104430631,"990579614":104430631,"995036844":"password","state":{"158291096":104430631,"706283025":{"163284008":104430631,"163534562":104430631,"196038514":104430631,"208102461":104430631,"209509101":104430631,"211023960":104430631,"260703126":104430631,"331787113":104430631,"347614743":104430631,"363026564":104430631,"377633816":104430631,"381509125":104430631,"387198193":104430631,"400259098":104430631,"405352246":104430631,"415693436":"","491099823":104430631,"496935183":104430631,"497530905":104430631,"517101990":104430631,"535928798":104430631,"566047367":104430631,"579618065":104430631,"627995442":104430631,"702433259":104430631,"705732561":104430631,"719451909":104430631,"744197145":104430631,"755545718":104430631,"771146804":104430631,"831137710":104430631,"836460125":104430631,"873405723":104430631,"897366187":104430631,"950040334":104430631},"875549268":104430631,"uid":"ElwSscmzONRfUJpeIEvSixrlX4X2"},"token":"8de6b06a-f294-4819-ab96-91c9851a480f","Connect_ID":2794377839,"query":{"firstName":["datadestruction"],"lastName":["sixtydays"]}} 
+
+
+df_merged = pd.concat([df1, df2], ignore_index=True, sort=False)
+
+##
+dataDestruction= {
+        consentFirstName: 471168198,
+        consentMiddleName: 436680969,
+        consentLastName: 736251808,
+        consentSuffixName: 480305327,
+        userProfileNameFirstName: 399159511,
+        userProfileNameMiddleName: 231676651,
+        userProfileNameLastName: 996038075,
+        userProfileNameSuffixName: 506826178,
+        dateOfBirth: 371067537,
+        birthMonth: 564964481,
+        birthDay: 795827569,
+        birthYear: 544150384,
+        healthcareProvider: 827220437,
+        informedConsentFlag: 919254129,
+        informedConsentVersion: 454205108,
+        informedConsentDateSigned: 454445267,
+        verificationStatus: 821247024,
+        verificationDate: 914594314,
+        hipaaAuthorizationFlag: 558435199,
+        hipaaAuthorizationVersion: 412000022,
+        hipaaAuthorizationDateSigned: 262613359,
+        userProfileSubmittedFlag: 699625233,
+        hipaaRevocationFlag: 773707518,
+        withdrawalFlag: 747006172,
+        dateOfWithdrawal: 659990606,
+        whoRequestedWithdrawal:299274441,
+        whoRequestedWithdrawalOther: 457532784,
+        reasonsForWithdrawal: 919699172,
+ 
+        tooBusy: 141450621,
+        incentiveTooLow: 576083042,
+        tooSick: 431428747,
+        unreliableInternetDevice: 121430614,
+        worriedAboutStudyResults: 523768810,
+        worriedStudyWillFindSomethingBad: 639172801,
+        privacyConcerns: 175732191,
+        donNotTrustGov: 150818546,  
+        donNotTrustRsrchrs: 624030581,  
+        donNotWantInfoSharedWithRsrchrs: 285488731,  
+        worriedInfoNotSecure: 596510649,
+        worriedInsWillGetData: 866089092,
+        iAmWorriedAboutDataBeingGivenToMyEmployerPotentialEmployer: 990579614,
+        worriedAboutDiscriminationFromData: 131458944,
+        worriedOthersWillProfitFromMyData: 372303208,
+        otherPrivacyConcerns: 777719027,
+        unAbleToCompleteOnlineActivities: 620696506,
+        donNotLikeThingsOnline: 352891568,  
+        covConcerns: 958588520,
+        partNowUnAbleToParticipate: 875010152,
+        partIncarcerated: 404289911,
+        reasonNotGiven: 538619788,
+        otherReasonsSpecify: 715390138,
+        otherReasons: 734828170,  
+ 
+        hipaaRevocationFormHasBeenSigned: 153713899,
+        hipaaRevocationCategorical: 577794331,
+        dateOfSignatureOnHIPAARevocationForm: 613641698,
+        versionOfTheHIPAARevocationForm: 407743866,
+        nameExtractedFromSignedHIPAARevocationFormFirstName: 765336427,
+        nameExtractedFromSignedHIPAARevocationFormMiddleName: 826240317,
+        nameExtractedFromSignedHIPAARevocationFormLastName: 479278368,
+        nameExtractedFromSignedHIPAARevocationFormSuffix: 693626233,
+        dataDestructionRequest: 831041022,
+        dateOfDestructionRequest: 269050420,
+        whoRequestedDataDestruction: 524352591,
+        whoRequestedDataDestructionOther: 902332801,
+        dataDestructionRequestFormHasBeenSigned: 359404406,
+        dataDestructionCategoricalFlag: 883668444,
+        dateOfSignatureOnDataDestructionRequestForm: 119449326,
+        versionOfTheDataDestructionRequestForm: 304438543,
+        nameExtractedFromSignedDataDestructionFormFirstName: 104278817,
+        nameExtractedFromSignedDataDestructionFormMiddleName: 268665918,
+        nameExtractedFromSignedDataDestructionFormLastName: 744604255,
+        nameExtractedFromSignedDataDestructionFormSuffixName: 592227431,
+        dataHasBeenDestroyedFlag: 861639549,
+        participationStatus: 912301837,
+        incentive: 130371375,
+        incentiveEligible: 731498909,
+        dateIncentiveEligible: 787567527,
+        norcIncentiveEligible: 222373868,
+        incentiveIssued: 648936790,
+        dateIncentiveIssued: 297462035,
+        incentiveRefused: 648228701,
+        dateIncentiveRefused: 438636757,
+        norcCaseNumber: 320023644,
+        bloodUrineMouthwashCombinedResearchSurveyFlag: 265193023,
+        autogeneratedDateTimeWhenBloodUrineMouthwashResearchSurveyCompleted: 222161762,
+        bloodUrineSurveyCompletionFlag: 253883960,
+        autogeneratedDateTimeWhenBloodUrineSurveyCompleted: 764863765,
+        mouthwashSurveyCompletionFlag: 547363263,
+        autogeneratedDateTimeWhenMouthwashSurveyCompleted: 195145666,
+        menstrualCycleSurveyCompletionFlag: 459098666,
+        autogeneratedDateTimeWhenMenstrualCycleSurveyCompleted: 217640691,
+        covid19SurveyCompletionFlag: 220186468,
+        autogeneratedDateTimeWhenCOVID19SurveyCompleted: 784810139,
+        surveyCompletionFlag: 320303124,
+        autogeneratedDateTimeWhenPROMISSurveyCompleted: 843688458,
+        baselineSurveyStatusModuleBackgroundAndOverallHealthFlag: 949302066,
+        autogeneratedDateTimeStampForCompletionOfModuleBackgroundAndOverallHealth: 517311251,
+        baselineSurveyStatusModuleMedications: 536735468,
+        autogeneratedDateTimeStampForCompletionOfModuleMedications: 832139544,
+        baselineSurveyStatusModuleSmoking: 976570371,
+        autogeneratedDateTimeStampForCompletionOfModuleSmoking: 770257102,
+        baselineSurveyStatusModuleWhereYouLiveAndWorkFlag: 663265240,
+        autogeneratedDateTimeStampForCompletionOfModuleWhereYouLiveAndWork: 264644252,
+        snsnSurveyFlag: 126331570,
+        autogeneratedDateTimeWhenSSNSurveyCompleted: 315032037,
+        allBiospecimenCollectionDetailsData: 173836415
+    }
+    
+    
+    
+    dd.list ==pd.DataFrame(dt)
+    
+```
+
+##to check these three Connect_IDs in dev GCP on Mar. 25, 2024
+
+```{r}
+
+select0 <- paste(unique(partvar1[which(partvar1$stub_var==1 & !grepl("STRUCT",partvar1$data_type)),]$column_name),collapse=",")
+
+id <- c(2794377839,6674469060,5468989193)
+check1_new <- fun.query_id("Connect","participants",select0,id)
+
+select <- paste(unique(recrvar[which(recrvar$stub_var==1 & !grepl("STRUCT",recrvar$data_type)),]$column_name),collapse=",")
+
+check <- fun.query_id("Connect","participants_JP",select,id)
+
+table(participants_stubs[duplicated(participants_stubs$column_name),]$column_name)
+
+#d_130371375 d_173836415 d_299274441 d_480305327 d_506826178 d_524352591 d_569151507       query       state 
+
+d_130371375 <- as.data.frame(rbindlist(check1_new$d_130371375,use.names=TRUE,fill=TRUE,idcol="Connect_ID"))
+```
+
+```{r}
+id1 <- 1944328478
+check1 <- fun.query_id("FlatConnect","participants_JP","*",id1)
+check1_stubs <- check1 %>% select(contains(all.selected)) 
+
+
+check1_stud_dd <- merge(check1_stubs, y[,c("conceptId.2","conceptId.3", "Variable.Label","Variable.Name","Current.Source.Question","Current.Question.Text")], by.x="description",by.y="conceptId.3",all.x=TRUE) %>% as_tibble() %>% 
+    mutate(select = ifelse(is.na(conceptId.2),1,ifelse(str_count(field_path,as.character(conceptId.2)) > 0, 1,0))) %>% filter(.,select==1) %>% group_by(field_path) %>% arrange(field_path) %>% distinct(field_path,.keep_all = TRUE)
+
+print(check1_stud_dd[,colSums(is.na(check1_stud_dd)) == 0])
+
+
+
+id7 <- 9217339842 #biospecimen and KitAssembly
+check7 <- fun.query_id("FlatConnect","participants_JP","*",id7)
+check7_stub<- check7 %>% select(contains(all.selected)) 
+check7 <- check7 %>% select(contains(modules))
+dt_destr <- NULL
+for (t in c(1:3,5:16,18,20:21)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    id <- 9217339842
+    print(x)
+    tmp <- fun.query_id(y,x,"*",id)
+    
+    tmp <- as.data.frame(tmp)
+    stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+    print(stub.vars)
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)),stub.vars)
+    names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+    dt$deleted_ID <- id
+    dt_destr <- bind_rows(dt,dt_destr)
+    dt_destruction[[t]] <- tmp
+}
+dt_destr_9217339842 <- dt_destr #biospecimen and KitAssembly
+
+
+id8 <- 1572333109
+check8 <- fun.query_id("FlatConnect","participants_JP","*",id8)
+check8_stub<- check8 %>% select(contains(all.selected)) 
+kits_8 <- fun.query_id("FlatConnect","kitAssembly_JP","*",id8) #there
+dt_destr <- NULL
+for (t in c(1:3,5:16,18,20:21)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    id <- 1572333109
+    print(x)
+    tmp <- fun.query_id(y,x,"*",id)
+    
+    tmp <- as.data.frame(tmp)
+    stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+    print(stub.vars)
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)),stub.vars)
+    names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+    dt$deleted_ID <- id
+    dt_destr <- bind_rows(dt,dt_destr)
+    dt_destruction[[t]] <- tmp
+}
+dt_destr_1572333109 <- dt_destr #only participants table
+
+
+
+##connect_ID 8683192454 for ssn data
+id_2439773975 <- dplyr::filter(check.rest,Connect_ID=='2439773975')
+ids_2439773975.bio <- ids_2439773975 %>% select(contains(biospe.coll),Connect_ID)
+ids3 <- 2439773975
+check3 <- fun.query_id("FlatConnect","participants_JP","*",ids3)
+check3_stub<- check3 %>% select(contains(all.selected)) 
+check3 <- check3 %>% select(contains(biospe.coll))
+
+dt_destr <- NULL
+for (t in c(1:3,5:16,18,20:21)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    id <- 2439773975
+    print(x)
+    tmp <- fun.query_id(y,x,"*",id)
+    
+    tmp <- as.data.frame(tmp)
+    stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+    print(stub.vars)
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)),stub.vars)
+    names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+    dt$deleted_ID <- id
+    dt_destr <- bind_rows(dt,dt_destr)
+    dt_destruction[[t]] <- tmp
+}
+dt_destr_2439773975 <- dt_destr #only participants table
+
+
+ids4 <- 7048008033
+check4 <- fun.query_id("FlatConnect","participants_JP","*",ids4)
+check4_stub<- check4 %>% select(contains(all.selected)) 
+check4 <- check4 %>% select(contains(biospe.svy),contains(modules))
+
+
+#to check the other datasets in dev:
+flatdatasets <- dbListTables(con)
+
+dt_destruction <- list()
+dt_destr <- NULL
+for (t in c(1:3,5:16,18:21)){
+  x <- flatdatasets[t]
+  y <- "FlatConnect"
+  id <- 7048008033
+  print(x)
+  tmp <- fun.query_id(y,x,"*",id)
+
+  tmp <- as.data.frame(tmp)
+  stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+  print(stub.vars)
+  print(dim(tmp))
+  dt <- data.frame(x, t(dim(tmp)),stub.vars)
+  names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+  dt$deleted_ID <- id
+  dt_destr <- bind_rows(dt,dt_destr)
+  dt_destruction[[t]] <- tmp
+} 
+
+dt_destr_7048008033 <- dt_destr #only participants table
+
+
+ids.rest <- c(8683192454,2439773975,7048008033,8168924396,2242285934,4909788923,9075819798)
+check.rest <- fun.query_id("FlatConnect","participants_JP","*",ids.rest)
+check.rest.stub<- check.rest %>% select(contains(all.selected)) 
+checkrest_stub.t <- t(check.rest.stub)
+
+dt_destruction <- list()
+for (ids in ids.rest){
+  
+dt_destr <- NULL
+for (t in c(1:3,5:16,18,20:21)){
+  x <- flatdatasets[t]
+  y <- "FlatConnect"
+  id <- ids
+  print(x)
+  tmp <- fun.query_id(y,x,"*",id)
+
+  tmp <- as.data.frame(tmp)
+  stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+  print(stub.vars)
+  print(dim(tmp))
+  dt <- data.frame(x, t(dim(tmp)),stub.vars)
+  names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+  dt$deleted_ID <- id
+  eval(parse(text=paste("dt_destr_",ids,"<- bind_rows(dt,dt_destr)",sep=""))) 
+  #dt_destruction[[t]] <- tmp
+  } 
+}
+
+
+##box table would be saved along with the biospecimen and kitAssembly tables, also the notification table is linked by token not Connect_ID
+
+#participants_noPII_JP"
+# Error in `bq_project_query()`:
+# ! Job nih-nci-dceg-connect-dev.job_QNKd17FTtqMW9aaXx_lDNUEgRpDk.US failed
+# ✖ Unrecognized name: d_130371375_d_266600170_d_862774033; Did you mean d_130371375_d_266600170_d_297462035?; failed to parse view
+#   'nih-nci-dceg-connect-dev.FlatConnect.participants_noPII_JP' at [19:5] [invalidQuery]
+# Run `rlang::last_trace()` to see where the error occurred.
+
+
+dt_destruction <- list()
+dt_destr <- NULL
+for (t in c(1:3,5:16,18,20:21)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    id <- 1944328478
+    print(x)
+    tmp <- fun.query_id(y,x,"*",id)
+    
+    tmp <- as.data.frame(tmp)
+    stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+    print(stub.vars)
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)),stub.vars)
+    names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+    dt$deleted_ID <- id
+    dt_destr <- bind_rows(dt,dt_destr)
+    dt_destruction[[t]] <- tmp
+}
+
+dt_destr_1944328478 <- dt_destr
+
+dt_destr <- NULL
+for (t in c(1:3,5:16,18,20:21)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    id <- 9217339842
+    print(x)
+    tmp <- fun.query_id(y,x,"*",id)
+    
+    tmp <- as.data.frame(tmp)
+    stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+    print(stub.vars)
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)),stub.vars)
+    names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+    dt$deleted_ID <- id
+    dt_destr <- bind_rows(dt,dt_destr)
+    dt_destruction[[t]] <- tmp
+}
+
+dt_destr_9217339842 <- dt_destr
+
+
+dt_destr <- NULL
+for (t in c(1:3,5:16,18,20:21)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    id <- 1572333109
+    print(x)
+    tmp <- fun.query_id(y,x,"*",id)
+    
+    tmp <- as.data.frame(tmp)
+    stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+    print(stub.vars)
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)),stub.vars)
+    names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+    dt$deleted_ID <- id
+    dt_destr <- bind_rows(dt,dt_destr)
+    dt_destruction[[t]] <- tmp
+}
+dt_destr_1572333109 <- dt_destr
+
+ids.rest <- c(8683192454,8168924396,2242285934,4909788923,9075819798)
+for (ids in ids.rest){
+    
+    dt_destr <- NULL
+    for (t in c(1:3,5:16,18,20:21)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- ids
+        print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id
+        eval(parse(text=paste("dt_destr_",id,"<- bind_rows(dt,dt_destr)",sep=""))) 
+        #dt_destruction[[t]] <- tmp
+    } 
+}
+
+```
+
+Data Destruction 2 in Stg:
+
+just a reminder that we'll need one stage test participant that actually receives their incentive from NORC for the testing tom (we weren't able to test this in dev as they only have one testing env that points to stage only)
+
+Incentive eligibility;
+
+222373868 BL NORC Payment Elig,
+
+|           |           |                     |
+|-----------|-----------|---------------------|
+| 731498909 | 266600170 | BL Elig For Payment |
+
+Research settings: 847159717 (Rsrch Ur Collected). 561681068 (Rsrch Bld Collected)
+
+Kits Assembly ID: 687158491, 221592017
+
+March 27, 2024
+
+check11 \<- fun.query_id("FlatConnect","participants_JP","\*",9498750731)
+
+```{r}
+project <- "nih-nci-dceg-connect-stg-5519"
+billing <- "nih-nci-dceg-connect-stg-5519"
+
+con <- dbConnect(
+    bigrquery::bigquery(),
+    project = project,
+    dataset = "FlatConnect",
+    billing = billing
+)
+
+ids_stg <- c(9437318120,5616611967,9950798786,2365435184,3902166309,7693827462,9906738170,6552896591,9348382022,2423067235)
+
+#to check the stub variables in each dataset in Connect/FlatConnect
+flatdatasets <- dbListTables(con)
+# flatdatasets
+#  [1] "bioSurvey_v1_JP"         "biospecimen_JP"          "boxes_JP"                "cancerOccurrence_JP"     "clinicalBioSurvey_v1_JP"
+#  [6] "covid19Survey_v1_JP"     "kitAssembly_JP"          "menstrualSurvey_v1_JP"   "merged_module1"          "merged_module2"         
+# [11] "module1_v1_JP"           "module1_v2_JP"           "module2_v1_JP"           "module2_v2_JP"           "module3_v1_JP"          
+# [16] "module4_v1_JP"           "mouthwash_v1_JP"         "notifications_JP"        "participants_JP"         "participants_noPII_JP"  
+# [21] "promis_v1_JP"            "sendgridTracking_JP"    
+
+#before the data destruction;
+
+for (ids in ids_stg[1]){
+    print(ids)
+    dt_before <- NULL
+    for (t in c(1:2,4:8,11:17,19,21:22)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- ids
+        print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id
+        dt_before<- bind_rows(dt,dt_before)
+        #dt_destruction[[t]] <- tmp
+    } 
+    eval(parse(text=paste("dt_before_",id,"<- dt_before)",sep=""))) 
+}
+
+id2 <- 5616611967 #biospecimen and KitAssembly
+check2 <- fun.query_id("FlatConnect","participants_JP","*",id2)
+check2_stub<- check2 %>% select(contains(all.selected)) 
+check2 <- check2 %>% select(contains(modules))
+dt_destr<- NULL
+for (t in c(1:2,4:8,11:17,19,21:22)){
+    x <- flatdatasets[t]
+    y <- "FlatConnect"
+    id <- 5616611967
+    print(x)
+    tmp <- fun.query_id(y,x,"*",id)
+    
+    tmp <- as.data.frame(tmp)
+    stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+    print(stub.vars)
+    print(dim(tmp))
+    dt <- data.frame(x, t(dim(tmp)),stub.vars)
+    names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+    dt$deleted_ID <- id
+    dt_destr <- bind_rows(dt,dt_destr)
+    #dt_destruction[[t]] <- tmp
+}
+dt_destr_5616611967 <- dt_destr #biospecimen and KitAssembly
+
+ids_stg6 <- c(9950798786,2365435184,3902166309,7693827462,9906738170,6552896591)
+
+check_ids <- fun.query_id("FlatConnect","participants_JP","*",id_stg6)
+check_ids <- check_ids %>% select(contains(all.selected)) 
+check_ids_stub <- check_ids %>% select(contains(modules))
+
+check_t <- t(check_id_stub)
+
+for (ids in ids_stg6){
+    
+    dt_destr <- NULL
+    for (t in c(1:2,4:8,11:17,19,21:22)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- ids
+        print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id
+        eval(parse(text=paste("dt_destr_",id,"<- bind_rows(dt,dt_destr)",sep=""))) 
+        #dt_destruction[[t]] <- tmp
+    } 
+}
+
+check11 <- fun.query_id("FlatConnect","participants_JP","*",9498750731)
+check11_stub <- check11 %>% select(contains(all.selected)) 
+   dt_before_9498750731 <- NULL
+   for (t in c(1:2,4:8,11:17,19,21:22)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- 9498750731
+        print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id 
+        dt_before_9498750731<- bind_rows(dt,dt_before_9498750731)
+        #dt_destruction[[t]] <- tmp
+   } 
+   
+   check11_after <- fun.query_id("Connect","participants","*",9498750731)
+
+#Mar. 28, 2024 to check all the CIDs who were done with data destructions yesterday in stage on their data  in stg to confirm their destruction are successfully done with the relevant data are removed and all the stub variables are well retained in each data.
+ids_stg <- c(9437318120,5616611967,9950798786,2365435184,3902166309,7693827462,9906738170,6552896591,9348382022,2423067235,9498750731)   
+   
+ for (ids in ids_stg){
+    print(ids)
+    dt_destr <- NULL
+    for (t in c(1:2,4:8,11:17,19,21:22)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- ids
+        print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id
+        dt_destr<- bind_rows(dt,dt_destr)
+        #dt_destruction[[t]] <- tmp
+    } 
+    eval(parse(text=paste("dt_destr_",id,"<- dt_destr)",sep=""))) 
+}
+  
+```
+
+As Madhuri said: "assuming we go to prod tonight, could you run the confirmation of deletion in prod like you've been doing for the testing? For anyone that has requested data destruction" (March 27, 2024)
+
+I will check all the deletion (both in stage and dev in the past) in prod to confirm that all data of these Connect_Ids are deleted
+
+```{r}
+dt_rqst_prod <- fun0.dtquery("FlatConnect","participants_JP","*") #not deleted yet on March 29, 2024
+dt_rqst_prod.dt_tobe <- dt_rqst_prod %>%select(!contains(all.selected))#no data destroyed yet
+
+#Apr.2, 2024
+
+dt_rqst_prod <- fun0.dtquery("Connect","participants","*") #not deleted yet on March 29, 2024
+dt_rqst_prod.dt_tobe <- dt_rqst_prod %>%select(!contains(all.selected))#no data destroyed yet
+
+table(dt_rqst_prod0$d_359404406,dt_rqst_prod0$d_831041022,dt_rqst_prod0$d_861639549)
+#table(dt_rqst_prod0$d_359404406)
+
+#104430631 353358909 
+#       25        20 
+table(dt_rqst_prod0$d_359404406,dt_rqst_prod0$d_831041022)
+  #          
+  #           353358909
+  # 104430631        25
+  # 353358909        20
+
+dt.request_ids <- dt_rqst_prod0$Connect_ID[which(dt_rqst_prod0$d_359404406==353358909)]
+
+dt_rqst_prod <- fun0.dtquery("Connect","participants_JP","*") #not deleted yet on March 29, 2024
+dt_rqst_prod.dt_tobe <- dt_rqst_prod %>% select(!contains(all.selected))
+
+#basedon Mia's weekly updates: on Apr. 1 "Data Destruction SOPs – the code for the automated data destruction process was pushed to prod last week on (2/28 at 10pm ET). We will run the first data destruction job on participants in prod tonight, 4/1 and will affect ~40 participant records of which have requested data destruction. Thereafter, the data destruction job will run nightly at 1am ET for participants who meet the criteria. The criteria for data destruction is (1) that the participant has requested data destruction and (2) have either signed the data destruction form or 60 days has lapsed since the participant first requested data destruction (regardless of form signature status), whichever comes first.  
+#Please review the updated NCI Connect Data Destruction SOP in full that contains additional details regarding released data and the data elements to be retained in the stub record and let us know if you have any questions (please note this SOP still needs to be finalized and is still in tracked changes). "
+#all the participants with data destroyed request are not got their data destroyed today checked on Apr. 2 morning. Also confirmed with Sandra's confirmations with Madhuri's check on Team: "
+# [10:17 AM] Natarajan, Madhuri (NIH/NCI) [C]
+# Hi all, it seems as though data destruction did not run last night. Onyekere, Sandra (NIH/NCI) [C] could someone please look into this? 
+#  like 1
+# [10:31 AM] Onyekere, Sandra (NIH/NCI) [C]
+# Thanks Madhduri for the alert! Data destruction was paused in our cloud scheduler system yesterday. However, we should be good to go for tonight, it is no longer paused. 
+ 
+
+dt_dest_04032024.ids <- dt_rqst_prod0$Connect_ID[which(dt_rqst_prod0$d_861639549== 353358909)]
+
+dt_rqst_prod.dt_tobe <- filter(dt_rqst_prod,Connect_ID %in% dt_dest_04032024.ids) %>% select(!contains(all.selected))
+dt_rqst_prod.dt_tobe$deletedRows <- dt_rqst_prod.dt_tobe %>% mutate( delet_rows = rowSums(is.na(dt_rqst_prod.dt_tobe)))
+
+dt_stub_prod <- filter(dt_rqst_prod,Connect_ID %in% dt_dest_04032024.ids) %>% select(contains(all.selected))
+##
+for (n in dt_dest_04032024.ids){
+    id <- n
+    dt_destr <-NULL
+    for (t in c(1:2,4:13,15:18)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- id
+        print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id
+        dt_destr<- bind_rows(dt,dt_destr)
+        #dt_destruction[[t]] <- tmp
+    } 
+    eval(parse(text=paste("dt_destr_",id,"<- dt_destr",sep=""))) 
+}
+
+for (n in dt.dd_ids){
+    id <- n
+    dt_destr <-NULL
+    for (t in c(1:2,4:13,15:18)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- id
+        #print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id
+        dt_destr<- bind_rows(dt,dt_destr)
+        #dt_destruction[[t]] <- tmp
+    } 
+    eval(parse(text=paste("dt404_destr_",id,"<- dt_destr",sep=""))) 
+}
+
+dd_tb_all <- dd_tb_all <- as.matrix(flatdatasets[c(1:2,4:13,15:18)], ncol=1,byrow=TRUE)
+dd_tb_all <- as.data.frame(dd_tb_all)
+names(dd_tb_all) <- "dataName"
+
+for (n in dt.dd_ids){
+    id <- n
+    dd_tb <- eval(parse(text=paste("dt404_destr_",id,sep=""))) 
+    tb_dd <- dd_tb %>% dplyr::select(dataName,Obs) %>% group_by(dataName, Obs) %>% distinct(dataName,.keep_all=TRUE) %>% as_tibble() 
+    names(tb_dd)[2] <- paste(names(tb_dd)[2],n,sep="_")
+    
+    dd_tb_all <- merge(tb_dd,dd_tb_all,by.x="dataName",by.y="dataName",all.y=TRUE)
+}
+   
+
+
+
+ dt_dd_prod <- fun0.dtquery("FlatConnect","participants_JP","*") #not deleted yet on Apr. 4, 2024  
+ dt.dd_ids <- dt_dd_prod$Connect_ID[which(dt_dd_prod$d_861639549=='353358909')] 
+ dt_dd_prod.dt_tobe <- filter(dt_dd_prod,Connect_ID %in% dt.dd_ids) %>% dplyr::select(!contains(all.selected))
+ dt_dd_prod.stub <- filter(dt_dd_prod,Connect_ID %in% dt.dd_ids) %>% dplyr::select(contains(all.selected))
+ dt_dd_prod.dt_tobe$NA_check <- rowSums (is.na(dt_dd_prod.dt_tobe))
+ 
+ 
+ dd_token <- dt_dd_prod$token[which(dt_dd_prod$Connect_ID %in% dt.dd_ids)]
+ dd_token_query <- paste(dd_token,collapse=",")
+ notice_query <- bq_project_query(project, query=glue("SELECT * FROM `nih-nci-dceg-connect-prod-6d04.FlatConnect.notifications_JP` where token in ('",{dd_token_query},"') ",sep=""))
+ notice_id <- bq_table_download(notice_query,bigint="integer64",n_max = Inf, page_size = 500)
+ dim(notice_id) #0
+ 
+ dt.dd_ids_query <- paste(dt.dd_ids,collapse=",")
+ Kit_query <- bq_project_query(project, query=glue("SELECT * FROM `nih-nci-dceg-connect-prod-6d04.Connect.kitAssembly` where Connect_ID in ('",{dt.dd_ids_query},"') ",sep=""))
+```
+
+```{r}
+knitr::kable(dt_stubs[,c(13,3:12),],caption = 'Table 43. How Recruits Heard About Study', row.names=FALSE, align=c("l", "c", "c","c", "c", "c", "c", "c", "c", "c","c","c"),format.args = list(big.mark=",")) %>% kable_styling(latex_options = "scale_down") %>% add_indent(c(1:20))%>% landscape() %>% footnote(general=c("Recruits may select more than one option.","Percentage is of each item in awareness among recruits within each site"),general_title="Note:",footnote_as_chunk = T)
+
+
+dt_rqst_prod.dtmore <- dt_rqst_prod %>% select(contains(c("119449326","269050420","304438543","359404406","524352591","883668444","884452262","831041022","861639549")), Connect_ID, pin, token)
+
+write.csv(dt_rqst_prod.dtmore, paste0(outputpath, "Connect_Prod_Data_Destructions_Info_among_45_refusalWithdrawals_",Sys.Date(),".csv",na=""),row.names=F)
+
+dt_rqst_prod.dtmore <- dt_rqst_prod0404 %>% select(contains(c("119449326","269050420","304438543","359404406","524352591","883668444","884452262","831041022")), Connect_ID, pin, token)
+
+write.csv(dt_rqst_prod.dtmore, paste0(outputpath, "Connect_Prod_Data_Destructions_Info_among_46_refusalWithdrawals_",Sys.Date(),".csv",na=""),row.names=F)
+
+write.csv(dd_tb_all, paste0(outputpath,"Connect_Prod_Data_Destructions_Summary_among_40_participants_",Sys.Date(),".csv",na=""),row.names=F)
+```
+
+```{r}
+
+dt_rqst_prod <- fun0.dtquery("FlatConnect","participants_JP","*")
+dt_rqst_prod.stub <- dt_rqst_prod %>%select(contains(all.selected))
+write.csv(dt_rqst_prod.stub, paste0(outputpath,"Connect_Prod_Data_Destructions_Stub_variables_among_50_participants_",Sys.Date(),".csv",na=""),row.names=F)
+```
+
+```{r}
+  project <- "nih-nci-dceg-connect-dev"
+  billing <- "nih-nci-dceg-connect-dev"
+
+ids1 <- 5810010461
+check1 <- fun.query_id("Connect","participants","*",ids1)
+check1_stubs <- check1 %>% select(contains(all.selected))
+check1_stubs.t <- t(check1_stubs)
+
+write.csv(check1_stubs.t,paste0(outputpath,"Connect_DEV_Data_Destructions_Summary_Connect_5810010461_",Sys.Date(),".csv",na=""),row.names=F)
+
+
+d_524352591 <- as.data.frame(rbindlist(check1_stubs$d_524352591, use.=TRUE, fill=TRUE, idcol="file"))
+
+write.csv(stub_5810010461.new, paste0(outputpath, "Connect_DEV_Data_Destructions_flattened_Summary_Connect_5810010461_",Sys.Date(),".csv",na=""),row.names=F)
+
+
+ View(d_173836415_d_266600170)
+ d_173836415_d_266600170_d_319972665 <- as.data.frame(rbindlist(d_173836415_d_266600170$d_319972665, use.=TRUE, fill=TRUE, idcol="file"))
+ View(d_173836415_d_266600170_d_319972665)
+ names(d_173836415_d_266600170_d_319972665) <- paste("d_173836415_d_266600170_d_319972665",names(d_173836415_d_266600170_d_319972665))
+ 
+ names(d_173836415_d_266600170) <- paste("d_173836415_d_266600170",names(d_173836415_d_266600170))
+ names(d_524352591) <- paste("d_524352591",names(d_524352591))
+ names(d_130371375_d_303552867) <- paste("d_130371375_d_303552867",names(d_130371375_d_303552867))
+ names(d_130371375_d_266600170) <- paste("d_130371375_d_266600170",names(d_130371375_d_266600170))
+ names(d_130371375_d_650465111) <- paste("d_130371375_d_650465111",names(d_130371375_d_650465111))
+ names(d_130371375_d_496823485) <- paste("d_130371375_d_496823485",names(d_130371375_d_496823485))
+ 
+ check1_stubs2 <- check1_stubs %>% select(!contains(c("130371375","173836415","524352591")))
+ stub_5810010461 <- bind_cols(check1_stubs2,d_130371375_d_303552867, as.data.frame(d_130371375_d_496823485),as.data.frame(d_130371375_d_266600170), as.data.frame(d_130371375_d_650465111),as.data.frame(d_173836415_d_266600170_d_319972665),as.data.frame(d_173836415_d_266600170,d_524352591))
+ 
+ stub_5810010461.new <- stub_5810010461 %>%  select(!contains(c("_key_","file")))
+ cnames <- names(stub_5810010461.new)
+###to check variables in recr_noinact_wl1
+numbers_only <- function(x) !grepl("\\D", x)
+ 
+for (i in 1: length(cnames)){
+  varname <- cnames[i]
+  var<-pull(stub_5810010461.new,varname)
+  stub_5810010461.new[,cnames[i]] <- ifelse(numbers_only(var), as.character(var), var)
+}
+
+tmp <- apply(stub_5810010461.new,2,as.character)
+tmp <- as.data.frame(t(tmp))
+
+write.csv(tmp, paste0(outputpath, "Connect_DEV_Data_Destructions_flattened_Summary_Connect_5810010461_",Sys.Date(),".csv",na=""),row.names=F)
+
+
+ids1 <- 5810010461
+check1 <- fun.query_id("FlatConnect","participants_JP","*",ids1)
+check1_stubs <- check1 %>% select(contains(all.selected))
+check1_stubs.t <- t(check1_stubs)
+write.csv(check1_stubs, paste0(outputpath, "Connect_DEV_Data_Destructions_flattened_Summary_Connect_5810010461_",Sys.Date(),".csv",na=""),row.names=F)
+
+    dt_destr <-NULL
+    for (t in c(2:3,5:17,19:21)){
+        x <- flatdatasets[t]
+        y <- "FlatConnect"
+        id <- ids1
+        print(x)
+        tmp <- fun.query_id(y,x,"*",id)
+        
+        tmp <- as.data.frame(tmp)
+        stub.vars <- names(tmp)[grepl(paste(all.selected,collapse="|"),names(tmp))]
+        print(stub.vars)
+        print(dim(tmp))
+        dt <- data.frame(x, t(dim(tmp)),stub.vars)
+        names(dt) <- c("dataName","Obs","Total.Vars","stub.vars") 
+        dt$deleted_ID <- id
+        dt_destr<- bind_rows(dt,dt_destr)
+        #dt_destruction[[t]] <- tmp
+    } 
+    eval(parse(text=paste("dt_destr_",id,"<- dt_destr",sep=""))) 
+    
+    ids <- c("7956451897","7916920108","4151371961")
+    check2 <- fun.query_id("FlatConnect","participants_JP","*",idss)
+    check2_stubs <- check1 %>% select(contains(all.selected))
+  check2_stubs.t <- t(check2_stubs)
+  
+  write.csv(check2_stubs.t, paste0(outputpath, "Connect_DEV_Data_Destructions_flattened_Summary_3Connect_IDs_",Sys.Date(),".csv",na=""),row.names=F)
+  
+```
+
+```{r}
+#to check the biospecimen data
+
+```
