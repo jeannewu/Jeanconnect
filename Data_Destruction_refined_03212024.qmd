@@ -109,8 +109,8 @@ dd.y <- read.csv(urlfile)
  billing <- "nih-nci-dceg-connect-prod-6d04" ##project and billing should be consistent
   
 #03.22.2024 data practice prep:
-#  project <- "nih-nci-dceg-connect-dev"
-#  billing <- "nih-nci-dceg-connect-dev"
+  project <- "nih-nci-dceg-connect-dev"
+  billing <- "nih-nci-dceg-connect-dev"
   
  #03.27.2024 data destruction stage:
   #project <- "nih-nci-dceg-connect-stg-5519"
@@ -127,7 +127,7 @@ con <- dbConnect(
 
 dbListTables(con)
 
-outputpath <-"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Routputs/"
+DDoutputpath <-"~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/DataDestruction/Routputs/"
 
 
 #d_773707518 == 353358909 (HIPAA revocation flag) & d_747006172 == 353358909 (withdrawal flag) & d_831041022 == 353358909 (data destruction request),"Data Destruction"
@@ -322,6 +322,72 @@ for (t in c(1:2,4:13,15:18)){
 # [1] 69  2
 
 #write.csv(stub_flat,paste(outputpath,"Data_Destruction_Connect_datasets_Stubs_variables_list_availability",Sys.Date(),".csv",sep=""),row.names=F,na="")
+
+
+
+###update the stub variables from the recent participants table:
+part_var <- bq_project_query(project, query=glue("SELECT * FROM  `",{project},".Connect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants'"))
+
+partvar          <- bigrquery::bq_table_download(part_var, bigint = "integer64")
+partvar1 <- filter(partvar,!grepl("key|error",field_path) & !grepl("STRUCT",data_type))  %>% 
+    mutate(CID.1st = ifelse(str_count(tolower(field_path),"d_")==0, field_path, substring(str_split_i(tolower(field_path),"d_",2),1,9)),
+           last.CID = ifelse(grepl("\\d{9}",field_path),substring(sapply(strsplit(tolower(field_path),"d_"),tail,1),1,9),NA))
+partvar1 <- merge(partvar1, dd,by.x="last.CID",by.y="CID",all.x=TRUE) 
+partvar1 <- merge(partvar1, dd.y[,c("conceptId.3","Variable.Name","Variable.Label")],by.x="last.CID",by.y="conceptId.3",all.x=TRUE) 
+
+
+partvar1 <- partvar1 %>% 
+    mutate(drop_dup=ifelse(grepl("862774033|868006655|ANY_SPECIMEN",field_path), 0, 
+                           ifelse(!grepl("266600170|496823485|650465111|303552867|740819233",field_path),0,
+                                  ifelse(grepl("266600170",field_path) & grepl("BL", Variable.Name), 0,
+                                         ifelse(grepl("496823485",field_path) & grepl("F1", Variable.Name),0,
+                                                ifelse(grepl("650465111",field_path) & grepl("F2", Variable.Name),0,
+                                                       ifelse(grepl("303552867",field_path) & grepl("F3", Variable.Name), 0,
+                                                              ifelse(grepl("740819233",field_path) & grepl("F4", Variable.Name), 0,
+                                                                     ifelse(grepl("d_637153953_d_740819233",field_path) & grepl("SrvBOH_C", Variable.Name),0, 1)))))))))
+tmp <- filter(partvar1,drop_dup==0) 
+tmp<-tmp[!duplicated(tmp$field_path),] %>% filter(.,description %nin% c("treeJSON","COMPLETED","sha"))
+stub_var_part.prod <- filter(tmp, grepl(paste(all.selected,collapse="|"),tmp$field_path))
+write.csv(stub_var_part.prod,paste(outputpath,"Data_Destruction_Prod_Connect_Participants_Stubs_variables_list_availability_unflatten_",Sys.Date(),".csv",sep=""),row.names=F,na="")
+
+
+recr_var <- bq_project_query(project, query=glue("SELECT * FROM  `",{project},".FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants_JP'"))
+
+recrvar          <- bigrquery::bq_table_download(recr_var, bigint = "integer64")
+
+recrvar1 <- recrvar %>% 
+  mutate(CID.1st = ifelse(str_count(column_name,"d_|D_")==0, column_name, substring(str_split_i(column_name,"d_",2),1,9)),
+         last.CID = ifelse(grepl("\\d{9}",column_name),substring(sapply(strsplit(column_name,"D_|d_"),tail,1),1,9),NA))
+
+dd$CID <- as.character(dd$CID)
+recrvar1 <- merge(recrvar1, dd,by.x="last.CID",by.y="CID",all.x=TRUE) 
+recrvar1 <- merge(recrvar1, dd.y[,c("conceptId.3","Variable.Name","Variable.Label")],by.x="last.CID",by.y="conceptId.3",all.x=TRUE) 
+
+
+recrvar1 <- recrvar1 %>% 
+  mutate(drop_dup=ifelse(grepl("862774033|868006655|ANY_SPECIMEN",column_name), 0, 
+                  ifelse(!grepl("266600170|496823485|650465111|303552867|740819233",column_name),0,
+                  ifelse(grepl("266600170",column_name) & grepl("BL", Variable.Name), 0,
+                  ifelse(grepl("496823485",column_name) & grepl("F1", Variable.Name),0,
+                  ifelse(grepl("650465111",column_name) & grepl("F2", Variable.Name),0,
+                  ifelse(grepl("303552867",column_name) & grepl("F3", Variable.Name), 0,
+                  ifelse(grepl("740819233",column_name) & grepl("F4", Variable.Name), 0,
+                  ifelse(grepl("d_637153953_d_740819233",column_name) & grepl("SrvBOH_C", Variable.Name),0, 1)))))))))
+
+tmp <- filter(recrvar1,drop_dup==0) 
+tmp<-tmp[!duplicated(tmp$column_name),]
+
+stubs_var_participants <- filter(tmp, grepl(paste(all.selected, collapse="|"), column_name))
+#I did check the participants tables in both stg and prod: the total variables are different.
+stubs_var_participants_prod <- filter(tmp, grepl(paste(all.selected, collapse="|"), column_name)) #186
+stubs_var_participants_stg <- filter(tmp, grepl(paste(all.selected, collapse="|"), column_name)) #202
+stubs_var_participants_dev <- filter(tmp, grepl(paste(all.selected, collapse="|"), column_name))  #193
+
+write.csv(stubs_var_participants_stg,paste(outputpath,"Data_Destruction_Connect_datasets_Stubs_variables_list_availability_Stg_",Sys.Date(),".csv",sep=""),row.names=F,na="")   
+write.csv(stubs_var_participants_prod,paste(outputpath,"Data_Destruction_Connect_datasets_Stubs_variables_list_availability_Prod_",Sys.Date(),".csv",sep=""),row.names=F,na="")   
+stg_stub.only <- stubs_var_participants_stg$column_name[which(stubs_var_participants_stg$column_name %nin% common_stub)]
+
+write.csv(stubs_var_participants_dev,paste(outputpath,"Data_Destruction_Connect_datasets_Stubs_variables_list_availability_Dev_",Sys.Date(),".csv",sep=""),row.names=F,na="")                                    
 ```
 
 query functions for checking the data of those Connect_ID with data destructions.
@@ -1344,8 +1410,8 @@ write.csv(check1_stubs, paste0(outputpath, "Connect_DEV_Data_Destructions_flatte
     eval(parse(text=paste("dt_destr_",id,"<- dt_destr",sep=""))) 
     
     ids <- c("7956451897","7916920108","4151371961")
-    check2 <- fun.query_id("FlatConnect","participants_JP","*",idss)
-    check2_stubs <- check1 %>% select(contains(all.selected))
+    check2 <- fun.query_id("FlatConnect","participants_JP","*",ids)
+    check2_stubs <- check2 %>% select(contains(all.selected))
   check2_stubs.t <- t(check2_stubs)
   
   write.csv(check2_stubs.t, paste0(outputpath, "Connect_DEV_Data_Destructions_flattened_Summary_3Connect_IDs_",Sys.Date(),".csv",na=""),row.names=F)
@@ -1354,5 +1420,61 @@ write.csv(check1_stubs, paste0(outputpath, "Connect_DEV_Data_Destructions_flatte
 
 ```{r}
 #to check the biospecimen data
+##Amelia asked to do the data destruction on these three pts: 5488539602
+#7721121201
+#1268641103
+ #03.27.2024 data destruction stage:
+ project <- "nih-nci-dceg-connect-stg-5519"
+  billing <- "nih-nci-dceg-connect-stg-5519"
 
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "FlatConnect",
+  billing = billing
+)  
+    
+ids <- c( "5488539602","7721121201","1268641103")
+ check_before <- fun.query_id("FlatConnect","participants_JP","*",ids)
+ check_stubs_before <- check_before %>% select(contains(all.selected))
+ 
+ids <- c( "5488539602","7721121201","1268641103")
+ check_after <- fun.query_id("FlatConnect","participants_JP","*",ids)
+ check_stubs_after <- check_after %>% select(contains(all.selected))
+ check_stubs_after.t <- t(check_stubs.after)
+write.csv(check_stubs_after.t, paste0(DDoutputpath, "Connect_Stg_Data_Destructions_flattened_Summary_3Connect_IDs_",Sys.Date(),".csv",na=""),row.names=F)
+
+check_stubs_after.refw<- check_after %>% select(contains(rf_wd))
+chec_stubs_afte.bio <- check_after %>% select(contains(biospe.coll))
+
+write.csv(check_stubs_after0.refw, paste0(DDoutputpath, "Connect_Stg_Data_Destructions_unflattened_RefusalWithdrawalReasons_3Connect_IDs_",Sys.Date(),".csv",na=""),row.names=F)
+
+
+check_after0 <- fun.query_id("Connect","participants","*",ids)
+check_stubs_after0.refw<- check_after0 %>% select(Connect_ID,contains(rf_wd))
+check_stubs_after0.refw.t <- t(check_stubs_after0.refw)
+check_stubs_after0.refw1 <- check_stubs_after0.refw %>% select(contains(refwd_reasons))
+write.csv(as.data.frame(check_stubs_after0.refw1), paste0(DDoutputpath, "Connect_Stg_Data_Destructions_unflattened_RefusalWithdrawalReasons_3Connect_IDs_",Sys.Date(),".csv",na=""),row.names=F)
+
+id <- "2471463766"
+ check1_after <- fun.query_id("FlatConnect","participants_JP","*",ids)
+ check1_refw.reasons <- check1_after.refw %>% select(Connect_Id,contains(refwd_reasons))
+ 
+
+```
+
+```{r}
+
+project <- "nih-nci-dceg-connect-prod-6d04"
+billing <- "nih-nci-dceg-connect-prod-6d04"
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "FlatConnect",
+  billing = billing
+)
+ ids2 <- c("6fd96960-ed50-4557-b106-f6ca50dd6973",
+"8a61fdb7-b7af-4464-b4dd-c2bd2dc62080","7edfde62-65de-429c-8ab2-15f4443e2dad","e38aea1a-1865-4fc8-9aaa-d73d61331e4a")
+ 
+ 
 ```
