@@ -141,8 +141,8 @@ Age <- c("30-34",  "35-39","40-45","46-50","51-55","56-60","61-65","66-70")
 ###Aug. 8, 2023, Mia's new request on the UChicago's cathcment data: https://nih.app.box.com/file/1276005860923
 ##as Mia' ask to update the UChicago's data in previous aggregate tables.
 
-box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
+box_auth(client_id = client_id,
+         client_secret = secret)
 
 box_setwd(dir_id = 172265415154)
 UChi <- box_read(file_id = 1276005860923,sheet=1)
