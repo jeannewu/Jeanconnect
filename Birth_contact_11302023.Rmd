@@ -165,8 +165,8 @@ write.csv("NORC_BirthdayCard_",currentDate,".csv")
 
 #Month = sapply(strsplit(format(Sys.Date()1, "%Y %B %b %m"), " "),"[")[2]
 Month = sapply(strsplit(format(ymd(Sys.Date()) %m+% months(1), "%Y %B %b %m"), " "),"[")[2] # one month earlier in preparation of the list
-box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm") 
+box_auth(client_id = client_id,
+         client_secret = secret) 
 box_setwd(dir_id = 237829489634) 
 
 ## the box foler Madhuri assigned in dev: https://gcc02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fnih.app.box.com%2Ffolder%2F237829489634%3Ftc%3Dcollab-folder-invite-treatment-b&data=05%7C01%7Cjing.wu2%40nih.gov%7C5b48809fed5849ea8e5808dbf2a4cab1%7C14b77578977342d58507251ca2dc2b06%7C0%7C0%7C638370561812949029%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000%7C%7C%7C&sdata=TLamALLrfxBl8x8NxGH4YLmcoph%2Bx5ryun178wurQd8%3D&reserved=0
