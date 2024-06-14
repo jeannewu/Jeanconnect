@@ -1,0 +1,1228 @@
+---
+title: "Hemolysis_analysis_02052024"
+author: "Jing Wu"
+execute:
+  echo: false
+format: 
+  html:
+      toc: true
+      html-math-method: katex
+      css: styles.css
+editor: visual
+---
+
+## Hemolysis - **HP Streck tube pilot analysis**
+
+The hemolysis data: <https://nih.app.box.com/file/1408576499417>. <https://nih.app.box.com/file/1419688124454>
+
+the analytical file: <https://nih.app.box.com/file/1436286215524?s=4gw0cyh0cun4v353k0yw1s5745vz9kod>
+
+ Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+#| echo: false
+#| include: false
+#| eval: true
+#| 
+# [hide] 
+#| code-fold: true
+#| code-summary: "Show the code"
+
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table) ###to write or read and data management 
+library(bigrquery)
+library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management https://tidyselect.r-lib.org/reference/faq-external-vector.html
+library(dplyr) ###data management some functions are not available in the dplyr masked in the tidyverse
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+#library(sqldf) ##sql
+#library(lubridate) ###date time it is already masked in 'tidyverse'
+library(ggplot2) ###plots
+library(ggpubr) ###for the publications of plots
+library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
+library(gridExtra)
+#library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tidyr)
+library(tinytex) #for pdf
+library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html t
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+#library(summarytools) ##recommended not applied in this R code
+library(gmodels) ##recommended but not applied in this R code
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+#library(patchwork)
+library(rio)
+library(readxl)
+library(purrr)
+library(lme4)
+library(skimr)
+
+box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
+         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
+```
+
+Import the working data from Box: /Users/wuj12/Library/CloudStorage/Box-Box/CONNECT_DCEG ONLY/Biospecimen_DCEG ONLY/STRECK Tube (<https://nih.app.box.com/folder/229338866264?s=n3hxbtbmaze5f1sv8kpk63rufmgrn0f3>)
+
+<https://nih.app.box.com/folder/244206033569>
+
+```{r}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#| echo: false
+#| include: false
+#| eval: true
+# [hide] 
+box_setwd(dir_id =244206033569)
+hemolysis <- box_read(file_id=1419688124454)
+# Remote file '/var/folders/z2/6938nzld299b956wrk2w0s8nw8s4d2/T//RtmplC5IRS/MERGED_ShipComTemps_BSI_HP STRECK Pilot.xlsx' read into memory as an object of class data.frame
+table(hemolysis$Hemolyzed, hemolysis$`Material Type`)
+                   
+  #                  PLASMA SERUM WHOLE BL
+  # not hem (1)          247   762        0
+  # slight hemo (2-3)    269     0        0
+  # mod hem(4-5)          48     0        0
+  # severe hemo (6-7)     39     0        0
+
+length(unique(hemolysis$Connect_ID))
+# [1] 410
+
+names(hemolysis)
+#  [1] "RcrtES_Site_v1r0"                   "BioSpm_Setting_v1r0"               
+#  [3] "Connect_ID"                         "BioSpm_ColIDScan_v1r0"             
+#  [5] "BioCol_ColTime_v1r0"                "BioClin_ClinBloodTmBL_v1r0"        
+#  [7] "BioClin_ClinicalUrnTmBL_v1r0"       "BioPack_BoxID_v1r0"                
+#  [9] "BioBPTL_ShipComments_v1r0"          "BSI ID"                            
+# [11] "Sequence"                           "Date Drawn"                        
+# [13] "Date Received"                      "Date Processed"                    
+# [15] "Material Type"                      "Additive/Preservative"             
+# [17] "Hemolyzed"                          "Specimen Character"                
+# [19] "Box Comments"                       "Box Temperature on arrival"        
+# [21] "BioCol_PhlebInitials_v1r0"          "Box Lowest Temp during Transit"    
+# [23] "If frozen, How long frozen (hours)"
+ table(hemolysis$Hemolyzed)
+     # mod hem(4-5)       not hem (1) severe hemo (6-7) slight hemo (2-3) 
+     #           30              1003                39               253 
+ hemolysis <- hemolysis %>% 
+   mutate(anticoagulant = ifelse(grepl("EDTA", `Additive/Preservative`),  "EDTA = K2",  `Additive/Preservative`),
+          hemo_class = case_when(Hemolyzed %in% c("mod hem(4-5)", "severe hemo (6-7)") ~ 2,
+                                Hemolyzed == "slight hemo (2-3)" ~ 1,
+                                Hemolyzed =="not hem (1)" ~0),
+          hemo_flag = case_when(Hemolyzed %in% c("mod hem(4-5)", "severe hemo (6-7)", "slight hemo (2-3)") ~ 1,
+                                 Hemolyzed =="not hem (1)" ~0),
+          Hemolyzed = factor(Hemolyzed, levels= c("not hem (1)","slight hemo (2-3)","mod hem(4-5)", "severe hemo (6-7)" )),
+          hemo_severe = case_when(Hemolyzed %in% c("mod hem(4-5)", "severe hemo (6-7)") ~ 1,
+                                Hemolyzed %in% c("not hem (1)", "slight hemo (2-3)") ~0),
+          Temperature_changes_C=ifelse(BioBPTL_ShipComments_v1r0 !=" " & `Box Lowest Temp during Transit` !=" ", as.numeric(gsub("C|c","",str_split_i(BioBPTL_ShipComments_v1r0," ",-1)))- as.numeric(gsub("C|c","",`Box Lowest Temp during Transit`)), NA),
+          Box_Temperature_arrival = as.numeric(gsub("C|c","",`Box Temperature on arrival`)),
+          Box_Teperature_Lowest_transit = as.numeric(gsub("C|c","",`Box Lowest Temp during Transit`)),
+          days_received_drawn = difftime(as_date(`Date Received`), as_date(`Date Drawn`),units="days"),
+          Phlebotomist = toupper(BioCol_PhlebInitials_v1r0),
+          Specimen_Character=ifelse(is.na(`Specimen Character`), "not mentioned",`Specimen Character`),
+          lipedimia = ifelse(is.na(`Specimen Character`), 0, ifelse(grepl("Lipemic", `Specimen Character`), 1, 0 ))) #563
+ 
+ hemolysis$days_drawn_processed =difftime(hemolysis$"Date Processed", hemolysis$"Date Drawn",units="days") 
+ 
+ breaks <- hour(hm("00:00", "6:00", "12:00", "18:00", "23:59"))
+# labels for the breaks
+labels <- c("Night", "Morning", "Afternoon", "Evening")
+
+hemolysis$Time_of_day <- cut(x=hour(hemolysis$"Date Drawn"), breaks = breaks, labels = labels, include.lowest=TRUE)
+
+ 
+ hemolysis <- hemolysis %>%
+   mutate(days_drawn_process_cat = case_when(as.numeric(days_drawn_processed) <= 1 ~ "1 or less than 1 days",
+                                             as.numeric(days_drawn_processed) >1 &as.numeric(days_drawn_processed) <= 2 ~ "1 + or <2 days",
+                                             as.numeric(days_drawn_processed) >2 & as.numeric(days_drawn_processed) <=3 ~ " 2+ or 3 days",
+                                             as.numeric(days_drawn_processed) > 3 & as.numeric(days_drawn_processed) <=5 ~ "4-5 days",
+                                             as.numeric(days_drawn_processed) > 5 & as.numeric(days_drawn_processed) <=10 ~ ">5-10 days",
+                                             as.numeric(days_drawn_processed) > 10 & as.numeric(days_drawn_processed) <=15 ~ ">10-15 days",
+                                             as.numeric(days_drawn_processed) > 15 & as.numeric(days_drawn_processed) <=30 ~ ">15-30 days",
+                                             as.numeric(days_drawn_processed) > 30  ~ "30 days more"),
+           Phlebotomist = ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("CG","CSG"),"CG/CSG", ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("OJ","OJS","OS"), "OJ/OJS/OS",toupper(BioCol_PhlebInitials_v1r0) ))) 
+ 
+ hemo_plasma <- filter(hemolysis, `Material Type` == "PLASMA") %>% 
+   mutate(hemo_class = case_when(Hemolyzed %in% c("mod hem(4-5)", "severe hemo (6-7)") ~ 2,
+                                Hemolyzed == "slight hemo (2-3)" ~ 1,
+                                Hemolyzed =="not hem (1)" ~0),
+          hemo_flag = case_when(Hemolyzed %in% c("mod hem(4-5)", "severe hemo (6-7)", "slight hemo (2-3)") ~ 1,
+                                 Hemolyzed =="not hem (1)" ~0),
+          Hemolyzed = factor(Hemolyzed, levels= c("not hem (1)","slight hemo (2-3)","mod hem(4-5)", "severe hemo (6-7)" )),
+          hemo_severe = case_when(Hemolyzed %in% c("mod hem(4-5)", "severe hemo (6-7)") ~ 1,
+                                Hemolyzed %in% c("not hem (1)", "slight hemo (2-3)") ~0),
+          Temperature_changes_C=as.numeric(gsub("C|c","",str_split_i(BioBPTL_ShipComments_v1r0," ",-1)))- as.numeric(gsub("C|c","",`Box Lowest Temp during Transit`)),
+          Box_Temperature_arrival = as.numeric(gsub("C|c","",`Box Temperature on arrival`)),
+          Box_Teperature_Lowest_transit = as.numeric(gsub("C|c","",`Box Lowest Temp during Transit`)),
+         days_received_drawn = difftime(as_date(`Date Received`), as_date(`Date Drawn`),units="days"),
+         Phlebotomist = toupper(BioCol_PhlebInitials_v1r0))#563
+ 
+ hemo_plasma$days_drawn_processed =difftime(hemo_plasma$"Date Processed", hemo_plasma$"Date Drawn",units="days")  
+          
+collectID.nodup <- unique(hemo_plasma$BioSpm_ColIDScan_v1r0...6[duplicated(hemo_plasma$BioSpm_ColIDScan_v1r0...6)]) #Connect_ID 2333088669
+
+
+hemo_settings <- hemo_plasma %>% 
+  select(hemo_class,BioSpm_Setting_v1r0) %>%
+  tbl_cross(col = hemo_class,
+            row = BioSpm_Setting_v1r0,
+            label = list(hemo_class~"mod or severe hemolysis",
+                         BioSpm_Setting_v1r0 ~"Research/Clinical Settings" ),
+            digits=c(0,2),
+            percent = c("col"),
+            missing = "ifany",
+            margin_text = "Total Plasma",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo_clotting <- hemo_plasma %>% 
+  select(Hemolyzed,`Additive/Preservative`) %>%
+  tbl_cross(col = Hemolyzed,
+            row = `Additive/Preservative`,
+            label = list(Hemolyzed~"Completion of Baseline Surveys",
+                         `Additive/Preservative` ~"clotting agent" ),
+            digits=c(0,2),
+            percent = c("cell"),
+            missing = "ifany",
+            margin_text = "Total Verified Participants",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo_phlebotomist <- hemo_plasma %>% 
+  select(hemo_flag,Phlebotomist) %>%
+  tbl_cross(col = hemo_flag,
+            row = Phlebotomist,
+            label = list(hemo_flag~"Any hemolysis",
+                         Phlebotomist ~"Phlebotomist" ),
+            digits=c(0,2),
+            percent = c("col"),
+            missing = "ifany",
+            margin_text = "Total Plasma",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo_phlebotomist1 <- hemo_plasma %>% 
+  select(hemo_class,Phlebotomist) %>%
+  tbl_cross(col = hemo_class,
+            row = Phlebotomist,
+            label = list(hemo_class~"mod or severe hemolysis",
+                         Phlebotomist ~"Phlebotomist" ),
+            digits=c(0,2),
+            percent = c("col"),
+            missing = "ifany",
+            margin_text = "Total Plasma",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo_NeedleRecpt <- hemo_plasma %>% 
+  select(hemo_class,days_received_drawn) %>%
+  tbl_cross(col = hemo_class,
+            row = days_received_drawn,
+            label = list(hemo_class~"mod or severe hemolysis",
+                         days_received_drawn ~"Days from Blood Drawn to Received" ),
+            digits=c(0,2),
+            percent = c("col"),
+            missing = "ifany",
+            margin_text = "Total Plasma",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+```
+
+The general info. of hemolysis data and the hemolyzed blood collections;
+
+```{r}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#| echo: false
+#| include: false
+#| eval: true
+#| 
+# [hide] 
+hemo_all <- hemolysis %>% dplyr::select(Hemolyzed,RcrtES_Site_v1r0,BioSpm_Setting_v1r0,Sequence,anticoagulant,Phlebotomist,`Specimen Character`,`Material Type`,hemo_flag,hemo_severe,
+                                        days_drawn_processed,days_received_drawn, Box_Temperature_arrival,Temperature_changes_C,Box_Teperature_Lowest_transit) %>% mutate(Sequence = as.factor(Sequence),
+Hemolyzed =  ifelse(is.na(Hemolyzed),"Missing", Hemolyzed),
+days_received_drawn = as.numeric(days_received_drawn),
+Box_Temperature_arrival = as.numeric(Box_Temperature_arrival),
+Temperature_changes_C =as.numeric(Temperature_changes_C),
+Box_Teperature_Lowest_transit = as.numeric(Box_Teperature_Lowest_transit)) %>% as_tibble() %>%
+    tbl_summary(by = Hemolyzed,
+                type   = all_categorical() ~ "categorical", 
+                
+                statistic = list(all_continuous() ~ "{median} ({p25}, {p75})",
+                                 all_categorical() ~ "{n} / {N} ({p}%)"),
+                
+                missing_text = 'missing',
+                digits = all_continuous() ~ 2) %>%
+    #add_p(pvalue_fun = ~ style_pvalue(.x, digits = 2)) %>%
+    add_overall() %>%
+    add_n() %>%
+    modify_header(label ~ "**Variable**") %>%
+    modify_spanning_header(c("stat_1", "stat_2","stat_3", "stat_4") ~ "**Hemolyzed Status**") %>%
+    modify_footnote(
+        all_stat_cols() ~ "Median (IQR) or Frequency (%)"
+    ) %>%
+    modify_caption("**Table 1. All Blood Collection Characteristics**") %>%
+    bold_labels() %>% 
+    as_kable_extra(escape = FALSE, addtl_fmt = TRUE)
+
+hemo_summ <- hemo_plasma %>% dplyr::select(Hemolyzed,BioSpm_Setting_v1r0,Sequence,`Additive/Preservative`,`Specimen Character`,Phlebotomist,hemo_flag,hemo_severe,days_drawn_processed,days_received_drawn,Box_Temperature_arrival,Temperature_changes_C,Box_Teperature_Lowest_transit) %>% mutate(Sequence = as.factor(Sequence)) %>% as_tibble() %>%
+    tbl_summary(by = Hemolyzed,
+                statistic = list(all_continuous() ~ "{mean} ({sd})",
+                                 all_categorical() ~ "{n} / {N} ({p}%)"),
+                
+                digits = all_continuous() ~ 2) %>%
+    #add_p(pvalue_fun = ~ style_pvalue(.x, digits = 2)) %>%
+    add_overall() %>%
+    add_n() %>%
+    modify_header(label ~ "**Variable**") %>%
+    #modify_spanning_header(c("stat_1", "stat_2") ~ "**Hemolyzed Status**") %>%
+    modify_footnote(
+        all_stat_cols() ~ "Median (IQR) or Frequency (%)"
+    ) %>%
+    modify_caption("**Table 1. Blood Plasma Collection Characteristics**") %>%
+    bold_labels() %>%
+    as_kable_extra(escape = FALSE, addtl_fmt = TRUE)
+```
+
+```{r}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#| echo: false
+#| eval: true
+#| output: true
+# [hide]  
+options(knitr.table.format = "latex")
+options(kableExtra.auto_format = FALSE)
+
+hemo_all
+hemo_summ
+print(summary(glmer( hemo_flag ~ as.numeric(days_drawn_processed) + Box_Temperature_arrival+ Box_Teperature_Lowest_transit+ as.factor(hemo_plasma$BioPack_BoxID_v1r0) +  `Additive/Preservative` + (1|BioSpm_ColIDScan_v1r0...6), data=hemo_plasma,family="poisson",glmerControl(optimizer = "bobyqa"), nAGQ=10)))
+
+##results on data Feb. 07 2024 the most current data
+##fixed-effect model matrix is rank deficient so dropping 1 column / coefficient
+# boundary (singular) fit: see help('isSingular')
+# Generalized linear mixed model fit by maximum likelihood (Adaptive Gauss-Hermite Quadrature,
+#   nAGQ = 10) [glmerMod]
+#  Family: poisson  ( log )
+# Formula: hemo_class ~ as.numeric(days_drawn_processed) + Box_Temperature_arrival +  
+#     Box_Teperature_Lowest_transit + as.factor(hemo_plasma$BioPack_BoxID_v1r0) +  
+#     `Additive/Preservative` + (1 | BioSpm_ColIDScan_v1r0...6)
+#    Data: hemo_plasma
+# Control: glmerControl(optimizer = "bobyqa")
+# 
+#      AIC      BIC   logLik deviance df.resid 
+#    490.6    671.1   -204.3    408.6      562 
+# 
+# Scaled residuals: 
+#      Min       1Q   Median       3Q      Max 
+# -1.29131 -0.67173  0.09641  0.40904  2.74274 
+# 
+# Random effects:
+#  Groups                    Name        Variance Std.Dev.
+#  BioSpm_ColIDScan_v1r0...6 (Intercept) 0        0       
+# Number of obs: 603, groups:  BioSpm_ColIDScan_v1r0...6, 403
+# 
+# Fixed effects:
+#                                                 Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)                                      0.66951    1.12264   0.596 0.550926    
+# as.numeric(days_drawn_processed)                 0.04127    0.01072   3.848 0.000119 ***
+# Box_Temperature_arrival                         -0.13684    0.70270  -0.195 0.845602    
+# Box_Teperature_Lowest_transit                   -0.25607    0.95898  -0.267 0.789448    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box691 -1.11710    0.67995  -1.643 0.100400    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box693 -0.31100    1.78476  -0.174 0.861664    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box695 -0.45245    0.87321  -0.518 0.604355    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box697 -0.46710    2.83000  -0.165 0.868902    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box699 -2.47599    1.44087  -1.718 0.085723 .  
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box701 -0.47541    0.31576  -1.506 0.132166    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box702 -0.38860    0.45411  -0.856 0.392142    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box703 -2.20910    2.24047  -0.986 0.324135    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box704 -1.56922    0.89245  -1.758 0.078692 .  
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box705 -1.71790    1.99667  -0.860 0.389576    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box707 -0.53490    0.55349  -0.966 0.333836    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box708 -0.82203    2.52064  -0.326 0.744334    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box709 -0.91605    1.84756  -0.496 0.620024    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box710 -0.12424    1.21757  -0.102 0.918728    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box712 -0.46601    0.52557  -0.887 0.375256    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box713 -0.21605    0.44173  -0.489 0.624769    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box714  0.02235    0.53556   0.042 0.966712    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box715 -0.96551    1.52879  -0.632 0.527680    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box716 -0.88934    1.38198  -0.644 0.519883    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box717 -0.38540    0.53862  -0.716 0.474276    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box718 -0.31969    0.37152  -0.861 0.389510    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box719  0.23421    0.44115   0.531 0.595488    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box720 -0.79815    0.93650  -0.852 0.394064    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box721 -1.32456    2.42397  -0.546 0.584761    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box722 -0.56170    0.48603  -1.156 0.247808    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box723 -1.48154    1.04184  -1.422 0.155014    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box724 -1.32081    0.94427  -1.399 0.161883    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box725 -0.60399    0.49847  -1.212 0.225628    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box727 -0.76577    1.71829  -0.446 0.655843    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box728 -0.66206    0.57602  -1.149 0.250409    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box729 -0.76232    3.23940  -0.235 0.813954    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box731 -0.46582    3.34137  -0.139 0.889125    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box732 -0.07415    0.42095  -0.176 0.860177    
+# as.factor(hemo_plasma$BioPack_BoxID_v1r0)Box733 -0.60131    4.90292  -0.123 0.902390  
+# `Additive/Preservative`Lithium Heparin           0.29438    0.23622   1.246 0.212694    
+# `Additive/Preservative`Streck DNA Stabilizer     0.79956    0.32741   2.442 0.014604 *  
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+print(summary(glmer( hemo_severe ~ as.numeric(days_drawn_processed) +Phlebotomist+ Box_Temperature_arrival+  `Additive/Preservative` + (1|BioPack_BoxID_v1r0), data=hemo_plasma,family="poisson",glmerControl(optimizer = "bobyqa"), nAGQ=10)))
+# Generalized linear mixed model fit by maximum likelihood (Adaptive Gauss-Hermite Quadrature, nAGQ = 10) ['glmerMod']
+#  Family: poisson  ( log )
+# Formula: hemo_severe ~ as.numeric(days_drawn_processed) + Box_Temperature_arrival +  
+#     `Additive/Preservative` + (1 | BioPack_BoxID_v1r0)
+#    Data: hemo_plasma
+# Control: glmerControl(optimizer = "bobyqa")
+# 
+#      AIC      BIC   logLik deviance df.resid 
+#    236.4    262.4   -112.2    224.4      557 
+# 
+# Scaled residuals: 
+#     Min      1Q  Median      3Q     Max 
+# -0.9629 -0.2880 -0.2447 -0.1323  4.6325 
+# 
+# Random effects:
+#  Groups             Name        Variance Std.Dev.
+#  BioPack_BoxID_v1r0 (Intercept) 0.2246   0.4739  
+# Number of obs: 563, groups:  BioPack_BoxID_v1r0, 33
+# 
+# Fixed effects:
+#                                              Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)                                  -6.83577    1.61859  -4.223 2.41e-05 ***
+# as.numeric(days_drawn_processed)              0.14489    0.03855   3.759 0.000171 ***
+# Box_Temperature_arrival                       0.02386    0.13666   0.175 0.861396    
+# `Additive/Preservative`Lithium Heparin        0.63802    0.47716   1.337 0.181183    
+# `Additive/Preservative`Streck DNA Stabilizer  3.89778    1.42469   2.736 0.006221 ** 
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 
+# Correlation of Fixed Effects:
+#             (Intr) a.(__) Bx_Tm_ `A/P`H
+# as.nmrc(__) -0.914                     
+# Bx_Tmprtr_r -0.401  0.022              
+# `Addtv/P`LH -0.062  0.098 -0.179       
+# `Ad/P`SDNAS -0.917  0.979  0.031  0.140
+
+m1<- glmer( hemo_flag ~ as.numeric(days_drawn_processed) + as.factor(lipedimia)+   as.factor(`Additive/Preservative`)  + (1|BioSpm_ColIDScan_v1r0...6), data=hemolysis,family="poisson",glmerControl(optimizer = "bobyqa"), nAGQ=10)
+
+m1_int <- glmer( hemo_flag ~ as.numeric(days_drawn_processed) + as.factor(lipedimia)+   as.factor(`Additive/Preservative`) + as.factor(lipedimia)*as.factor(`Additive/Preservative`) + (1|BioSpm_ColIDScan_v1r0...6), data=hemolysis,family="poisson",glmerControl(optimizer = "bobyqa"), nAGQ=10)
+anova(m1_int,m1)
+# Data: hemolysis
+# Models:
+# m1: hemo_flag ~ as.numeric(days_drawn_processed) + as.factor(lipedimia) + as.factor(`Additive/Preservative`) + (1 | BioSpm_ColIDScan_v1r0...6)
+# m1_int: hemo_flag ~ as.numeric(days_drawn_processed) + as.factor(lipedimia) + as.factor(`Additive/Preservative`) + as.factor(lipedimia) * as.factor(`Additive/Preservative`) + (1 | BioSpm_ColIDScan_v1r0...6)
+#        npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)
+# m1        7 373.37 409.88 -179.68   359.37                     
+# m1_int   10 375.99 428.15 -178.00   355.99 3.3739  3     0.3375
+
+
+
+summary(glmer( hemo_flag ~ as.numeric(days_drawn_processed) + as.factor(lipedimia)+  as.factor(`Additive/Preservative`)  + (1|BioSpm_ColIDScan_v1r0...6), data=hemolysis,family="poisson",glmerControl(optimizer = "bobyqa"), nAGQ=10))
+# boundary (singular) fit: see help('isSingular')
+# Generalized linear mixed model fit by maximum likelihood (Adaptive Gauss-Hermite
+#   Quadrature, nAGQ = 10) [glmerMod]
+#  Family: poisson  ( log )
+# Formula: hemo_flag ~ as.numeric(days_drawn_processed) + as.factor(lipedimia) +  
+#     as.factor(`Additive/Preservative`) + (1 | BioSpm_ColIDScan_v1r0...6)
+#    Data: hemolysis
+# Control: glmerControl(optimizer = "bobyqa")
+# 
+#      AIC      BIC   logLik deviance df.resid 
+#    373.4    409.9   -179.7    359.4     1354 
+# 
+# Scaled residuals: 
+#      Min       1Q   Median       3Q      Max 
+# -1.01317 -0.00001 -0.00001  0.28530  1.08526 
+# 
+# Random effects:
+#  Groups                    Name        Variance Std.Dev.
+#  BioSpm_ColIDScan_v1r0...6 (Intercept) 0        0       
+# Number of obs: 1361, groups:  BioSpm_ColIDScan_v1r0...6, 410
+# 
+# Fixed effects:
+#                                                           Estimate Std. Error z value
+# (Intercept)                                              -1.173278   0.237911  -4.932
+# as.numeric(days_drawn_processed)                          0.019880   0.007102   2.799
+# as.factor(lipedimia)1                                     0.343542   0.119038   2.886
+# as.factor(`Additive/Preservative`)Lithium Heparin         0.291975   0.262969   1.110
+# as.factor(`Additive/Preservative`)SST                   -22.138286 193.517823  -0.114
+# as.factor(`Additive/Preservative`)Streck DNA Stabilizer   0.389711   0.238281   1.636
+#                                                         Pr(>|z|)    
+# (Intercept)                                             8.16e-07 ***
+# as.numeric(days_drawn_processed)                         0.00512 ** 
+# as.factor(lipedimia)1                                    0.00390 ** 
+# as.factor(`Additive/Preservative`)Lithium Heparin        0.26687    
+# as.factor(`Additive/Preservative`)SST                    0.90892    
+# as.factor(`Additive/Preservative`)Streck DNA Stabilizer  0.10194    
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 
+# Correlation of Fixed Effects:
+#             (Intr) a.(__) as.()1 a.(`AH a.(`A/
+# as.nmrc(__) -0.903                            
+# as.fctr(l)1 -0.199  0.086                     
+# a.(`A/P`)LH -0.241  0.090  0.055              
+# a.(`A/P`)SS  0.000  0.000  0.000  0.000       
+# a.(`A/P`)DS -0.901  0.840 -0.151  0.218  0.000
+# optimizer (bobyqa) convergence code: 0 (OK)
+# boundary (singular) fit: see help('isSingular')
+
+
+summary(glmer( hemo_flag ~ as.numeric(days_drawn_processed) +   as.factor(`Additive/Preservative`)  + (1|BioSpm_ColIDScan_v1r0...6), data=hemolysis,family="poisson",glmerControl(optimizer = "bobyqa"), nAGQ=10))
+# boundary (singular) fit: see help('isSingular')
+# Generalized linear mixed model fit by maximum likelihood (Adaptive Gauss-Hermite
+#   Quadrature, nAGQ = 10) [glmerMod]
+#  Family: poisson  ( log )
+# Formula: 
+# hemo_flag ~ as.numeric(days_drawn_processed) + as.factor(`Additive/Preservative`) +  
+#     (1 | BioSpm_ColIDScan_v1r0...6)
+#    Data: hemolysis
+# Control: glmerControl(optimizer = "bobyqa")
+# 
+#      AIC      BIC   logLik deviance df.resid 
+#    379.8    411.1   -183.9    367.8     1355 
+# 
+# Scaled residuals: 
+#      Min       1Q   Median       3Q      Max 
+# -0.98635 -0.00001 -0.00001  0.26798  0.96453 
+# 
+# Random effects:
+#  Groups                    Name        Variance Std.Dev.
+#  BioSpm_ColIDScan_v1r0...6 (Intercept) 0        0       
+# Number of obs: 1361, groups:  BioSpm_ColIDScan_v1r0...6, 410
+# 
+# Fixed effects:
+#                                                           Estimate Std. Error z value
+# (Intercept)                                             -1.050e+00  2.350e-01  -4.469
+# as.numeric(days_drawn_processed)                         1.825e-02  7.118e-03   2.564
+# as.factor(`Additive/Preservative`)Lithium Heparin        2.532e-01  2.631e-01   0.962
+# as.factor(`Additive/Preservative`)SST                   -2.225e+01  4.009e+03  -0.006
+# as.factor(`Additive/Preservative`)Streck DNA Stabilizer  4.942e-01  2.373e-01   2.082
+#                                                         Pr(>|z|)    
+# (Intercept)                                             7.85e-06 ***
+# as.numeric(days_drawn_processed)                          0.0103 *  
+# as.factor(`Additive/Preservative`)Lithium Heparin         0.3359    
+# as.factor(`Additive/Preservative`)SST                     0.9956    
+# as.factor(`Additive/Preservative`)Streck DNA Stabilizer   0.0373 *  
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 
+# Correlation of Fixed Effects:
+#             (Intr) a.(__) a.(`AH a.(`A/
+# as.nmrc(__) -0.909                     
+# a.(`A/P`)LH -0.251  0.105              
+# a.(`A/P`)SS  0.000  0.000  0.000       
+# a.(`A/P`)DS -0.961  0.868  0.245  0.000
+# optimizer (bobyqa) convergence code: 0 (OK)
+# boundary (singular) fit: see help('isSingular')
+# 
+# Warning messages:
+# 1: In vcov.merMod(object, use.hessian = use.hessian) :
+#   variance-covariance matrix computed from finite-difference Hessian is
+# not positive definite or contains NA values: falling back to var-cov estimated from RX
+# 2: In vcov.merMod(object, correlation = correlation, sigm = sig) :
+#   variance-covariance matrix computed from finite-difference Hessian is
+# not positive definite or contains NA values: falling back to var-cov estimated from RX
+
+
+library(survival)
+collectID.nodup <- unique(hemo_plasma$BioSpm_ColIDScan_v1r0...6[duplicated(hemo_plasma$BioSpm_ColIDScan_v1r0...6)])
+
+hemo_plasma.dup <- filter(hemo_plasma, BioSpm_ColIDScan_v1r0...6 %in% collectID.nodup) 
+
+fit.clr <- clogit(hemo_flag ~ days_drawn_processed + `Additive/Preservative`+ strata(BioSpm_ColIDScan_v1r0...6, BioPack_BoxID_v1r0),
+                  data = hemo_plasma.dup)
+summary(fit.clr)
+
+# Regression coefficient
+round(summary(fit.clr)$coef, 4)
+
+fit.clr <- clogit(hemo_flag ~ days_drawn_processed + `Additive/Preservative`+ strata(BioSpm_ColIDScan_v1r0...6, BioPack_BoxID_v1r0),
+                  data = hemo_plasma.dup[which(hemo_plasma.dup$`Additive/Preservative`!="Lithium Heparin" ),])
+summary(fit.clr)
+Call:
+coxph(formula = Surv(rep(1, 354L), hemo_flag) ~ days_drawn_processed + 
+    `Additive/Preservative` + strata(BioSpm_ColIDScan_v1r0...6, 
+    BioPack_BoxID_v1r0), data = hemo_plasma.dup[which(hemo_plasma.dup$`Additive/Preservative` != 
+    "Lithium Heparin"), ], method = "exact")
+
+#   n= 353, number of events= 190 
+#    (1 observation deleted due to missingness)
+# 
+#                                                 coef exp(coef) se(coef)     z Pr(>|z|)   
+# days_drawn_processed                         0.06319   1.06523  0.01971 3.206  0.00135 **
+# `Additive/Preservative`Streck DNA Stabilizer 1.14779   3.15121  0.54949 2.089  0.03672 * 
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 
+#                                              exp(coef) exp(-coef) lower .95 upper .95
+# days_drawn_processed                             1.065     0.9388     1.025     1.107
+# `Additive/Preservative`Streck DNA Stabilizer     3.151     0.3173     1.073     9.251
+# 
+# Concordance= 0.693  (se = 0.075 )
+# Likelihood ratio test= 15.37  on 2 df,   p=5e-04
+# Wald test            = 12.81  on 2 df,   p=0.002
+# Score (logrank) test = 14.5  on 2 df,   p=7e-04
+
+
+nolip_strk <- filter(hemolysis, is.na(`Specimen Character`)) 
+
+
+clogit(hemo_flag ~ days_drawn_processed + `Additive/Preservative`+ strata(BioSpm_ColIDScan_v1r0...6, BioPack_BoxID_v1r0),data = hemolysis[which(!is.na(hemolysis$`Specimen Character`) & hemolysis$anticoagulant %in% c("EDTA = K2", "Streck DNA Stabilizer")),])
+
+# Call:
+# clogit(hemo_flag ~ days_drawn_processed + `Additive/Preservative` + 
+#     strata(BioSpm_ColIDScan_v1r0...6, BioPack_BoxID_v1r0), data = hemolysis[which(!is.na(hemolysis$`Specimen Character`) & 
+#     hemolysis$anticoagulant %in% c("EDTA = K2", "Streck DNA Stabilizer")), 
+#     ])
+# 
+#                                                 coef exp(coef) se(coef)     z     p
+# days_drawn_processed                         0.05599   1.05759  0.04703 1.191 0.234
+# `Additive/Preservative`Streck DNA Stabilizer 0.79421   2.21270  1.03390 0.768 0.442
+# 
+# Likelihood ratio test=1.87  on 2 df, p=0.3921
+# n= 285, number of events= 189 
+# there is no significant difference between Streck and EDTA in the relation with hemolysis among those samples with lipedimia
+
+clogit(hemo_flag ~ days_drawn_processed + `Additive/Preservative`+ strata(BioSpm_ColIDScan_v1r0...6, BioPack_BoxID_v1r0), data = hemolysis[which(is.na(hemolysis$`Specimen Character`)&     hemolysis$anticoagulant %in% c("EDTA = K2", "Streck DNA Stabilizer")),])
+# Call:
+# clogit(hemo_flag ~ days_drawn_processed + `Additive/Preservative` + 
+#     strata(BioSpm_ColIDScan_v1r0...6, BioPack_BoxID_v1r0), data = hemolysis[which(is.na(hemolysis$`Specimen Character`) & 
+#     hemolysis$anticoagulant %in% c("EDTA = K2", "Streck DNA Stabilizer")), 
+#     ])
+# 
+#                                                  coef exp(coef) se(coef)     z      p
+# days_drawn_processed                          0.20600   1.22875  0.09729 2.117 0.0342
+# `Additive/Preservative`Streck DNA Stabilizer  2.77883  16.10017  1.37523 2.021 0.0433
+# 
+# Likelihood ratio test=26.08  on 2 df, p=2.176e-06
+# n= 294, number of events= 150 
+#    (200 observations deleted due to missingness)
+# the signficant asssociation between Streck and hemolysis can be tested among those samples without lipedimia, compared with EDTA
+
+fit.clr <- clogit(hemo_flag ~ days_drawn_processed + `Additive/Preservative`+ Specimen_Character + strata(BioSpm_ColIDScan_v1r0...6, BioPack_BoxID_v1r0),
++                   data = hemo_plasma.dup[which(hemo_plasma.dup$`Additive/Preservative`!="Lithium Heparin" ),])
+```
+
+The plots of these main factors (exposure) by the degree of the hemolysis
+
+```{r}
+#| echo: false
+#| eval: true
+#| include: false
+#| warning: false
+
+# [hide] 
+ggplot(hemo_plasma,aes(x = Hemolyzed, y = Box_Temperature_arrival,fill=BioPack_BoxID_v1r0,color=BioPack_BoxID_v1r0)) +geom_point()
+
+tmp <- melt(hemo_plasma[,c("Hemolyzed","anticoagulant","Box_Temperature_arrival","Box_Teperature_Lowest_transit","Temperature_changes_C","days_drawn_processed")], id.vars= c("Hemolyzed", "anticoagulant"))
+  
+  print(ggplot(tmp, aes(x=Hemolyzed,y=value,fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.25) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+  theme(panel.background = element_blank(),
+        legend.title = element_text(size=7),
+        legend.position = "bottom",
+        axis.line = element_line(linewidth=0.2),
+        axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold")))
+
+print(ggplot(tmp[which(tmp$variable != "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.50) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+    theme(panel.background = element_blank(),
+          legend.title = element_text(size=7),
+          legend.position = "bottom",
+          axis.line=element_line(linewidth=0.2),
+          axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))  )  
+  
+ print( ggplot(tmp[which(tmp$variable == "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.75) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+    theme(panel.background = element_blank(),
+          legend.title = element_text(size=7),
+          legend.position = c(0.75,0.5),
+          axis.line=element_line(linewidth=0.2),
+          axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold")))
+
+print(ggplot(tmp[which(tmp$variable == "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed, color=anticoagulant)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.75) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+    theme(panel.background = element_blank(),
+          legend.title = element_text(size=7),
+          legend.position = "bottom",
+          axis.line=element_line(linewidth=0.2),
+          axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold")))  
+  
+# ggplot(hemo_plasma, aes(x=Hemolyzed,y=anticoagulant, fill=Hemolyzed))+ geom_jitter(alpha=0.2) +geom_violin(alpha=0.75) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+#     theme(panel.background = element_blank(),
+#           legend.title = element_text(size=7),
+#           legend.position = c(0.75,0.5),
+#           axis.line=element_line(linewidth=0.2),
+#           axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+# 
+
+tmp <- melt(hemo_plasma[,c("Hemolyzed","anticoagulant","Box_Temperature_arrival","Box_Teperature_Lowest_transit","Temperature_changes_C","days_drawn_processed")], id.vars= c("Hemolyzed", "anticoagulant"))
+
+tmp2 <- hemo_plasma %>% dplyr::select(`Additive/Preservative`, Hemolyzed) %>%  group_by(`Additive/Preservative`,Hemolyzed) %>% 
+  dplyr::summarise(n = dplyr::n(), .groups = "drop") %>% 
+  mutate(Hemolyzed = factor(Hemolyzed, levels= c("not hem (1)","slight hemo (2-3)","mod hem(4-5)", "severe hemo (6-7)" )))    
+
+#legend_title = "Hemolysis"
+print(ggplot(tmp2,aes(x = `Additive/Preservative`, y =n, fill=factor(Hemolyzed,levels=c( "severe hemo (6-7)","mod hem(4-5)","slight hemo (2-3)", "not hem (1)"))),size = n,color="black",vjust = -0.20,position = position_dodge(width=-0.6),angle=-35) + geom_jitter() +
+    geom_bar(position="stack",stat="identity",na.rm=TRUE,color="grey")+ 
+  scale_fill_manual("Hemolysis",values = c( "red","pink","yellow","lightblue" ) )+
+  scale_y_continuous(name="Individuals, N")+
+  #scale_x_discrete(limits=c("Initial Srv+Blood","Blood.Only","Survey.Only","Verified.noActivities","Expected.toVerified"),drop=FALSE)+
+ # geom_text(aes(y=label.count, label= Expected_Verified_n),color="black",vjust=1.0,size=3.0) + labs(x = "", y = "# Participants") +
+  stat_summary(fun.y = sum, aes(label = ..y.., group = `Additive/Preservative`), geom = "text",hjust = 1.5,vjust=-0.5,size=3.5) +
+  labs( title="Days from Drawn to Processing of Blood vs Hemolysis  \nby Anticoagulant")+
+  theme(panel.background = element_blank(),
+        legend.title = element_text(size=7),
+        legend.position = "bottom",
+        axis.line = element_line(size=0.2),
+        axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),
+        plot.title = element_text(hjust = 0.5,size = 12, face = "bold")))
+
+print(ggplot(tmp[which(tmp$variable == "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed, color=`anticoagulant`)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.5) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("blue","yellow","green",  "red") )+
+    theme(panel.background = element_blank(),
+          legend.title = element_text(size=7),
+          legend.position = "bottom",
+          axis.line=element_line(linewidth=0.2),
+          axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold")))
+
+ggplot(tmp[which(tmp$variable != "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed, color=`anticoagulant`)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.5) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("blue","yellow","green",  "red") )+
+    theme(panel.background = element_blank(),
+          legend.title = element_text(size=7),
+          legend.position = "bottom",
+          axis.line=element_line(linewidth=0.2),
+          axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+```
+
+```{r}
+
+#| echo: false
+#| include: false
+# [hide] 
+
+# ggplot(hemo_plasma,aes(x = Hemolyzed, y = Box_Temperature_arrival,fill=BioPack_BoxID_v1r0,color=BioPack_BoxID_v1r0)) +geom_point()
+# 
+# tmp <- melt(hemo_plasma[,c("Hemolyzed","anticoagulant","Box_Temperature_arrival","Box_Teperature_Lowest_transit","Temperature_changes_C","days_drawn_processed")], id.vars= c("Hemolyzed", "anticoagulant"))
+#   
+#   ggplot(tmp, aes(x=Hemolyzed,y=value,fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.25) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+#   theme(panel.background = element_blank(),
+#         legend.title = element_text(size=7),
+#         legend.position = c(0.75,0.9),
+#         axis.line = element_line(linewidth=0.2),
+#         axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold")) 
+# 
+#  ggplot(tmp[which(tmp$variable != "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.50) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+#     theme(panel.background = element_blank(),
+#           legend.title = element_text(size=7),
+#           legend.position = "bottom",
+#           axis.line=element_line(linewidth=0.2),
+#           axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))   
+#   
+#   ggplot(tmp[which(tmp$variable == "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.75) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+#     theme(panel.background = element_blank(),
+#           legend.title = element_text(size=7),
+#           legend.position = c(0.75,0.5),
+#           axis.line=element_line(linewidth=0.2),
+#           axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+# 
+# ggplot(tmp[which(tmp$variable == "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed, color=anticoagulant)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.75) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+#     theme(panel.background = element_blank(),
+#           legend.title = element_text(size=7),
+#           legend.position = c(0.75,0.5),
+#           axis.line=element_line(linewidth=0.2),
+#           axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))  
+#   
+# ggplot(hemo_plasma, aes(x=Hemolyzed,y=anticoagulant, fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.75) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+#     theme(panel.background = element_blank(),
+#           legend.title = element_text(size=7),
+#           legend.position = c(0.75,0.5),
+#           axis.line=element_line(linewidth=0.2),
+#           axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+# 
+# 
+# tmp <- melt(hemo_plasma[,c("Hemolyzed","anticoagulant","Box_Temperature_arrival","Box_Teperature_Lowest_transit","Temperature_changes_C","days_drawn_processed")], id.vars= c("Hemolyzed", "anticoagulant"))
+# 
+# tmp2 <- hemo_plasma %>% dplyr::select(`Additive/Preservative`, Hemolyzed) %>%  group_by(`Additive/Preservative`,Hemolyzed) %>% 
+#   dplyr::summarise(n = dplyr::n(), .groups = "drop") %>% 
+#   mutate(Hemolyzed = factor(Hemolyzed, levels= c("not hem (1)","slight hemo (2-3)","mod hem(4-5)", "severe hemo (6-7)" )))    
+# 
+# legend_title = "Hemolysis"
+# ggplot(tmp2,aes(x = `Additive/Preservative`, y =n, fill=factor(Hemolyzed,levels=c( "severe hemo (6-7)","mod hem(4-5)","slight hemo (2-3)", "not hem (1)"))),size = n,color="black",vjust = -0.20,position = position_dodge(width=-0.6),angle=-35) + geom_jitter() +
+#     geom_bar(position="stack",stat="identity",na.rm=TRUE,color="grey")+ 
+#   scale_fill_manual("Hemolysis",values = c( "red","pink","yellow","lightblue" ) )+
+#   scale_y_continuous(name="Individuals, N")+
+#   #scale_x_discrete(limits=c("Initial Srv+Blood","Blood.Only","Survey.Only","Verified.noActivities","Expected.toVerified"),drop=FALSE)+
+#  # geom_text(aes(y=label.count, label= Expected_Verified_n),color="black",vjust=1.0,size=3.0) + labs(x = "", y = "# Participants") +
+#   stat_summary(fun.y = sum, aes(label = ..y.., group = `Additive/Preservative`), geom = "text",hjust = 1.5,vjust=-0.5,size=3.5) +
+#   labs( title="Days from Drawn to Processing of Blood vs Hemolysis  \nby Anticoagulant")+
+#   theme(panel.background = element_blank(),
+#         legend.title = element_text(size=7),
+#         legend.position = "bottom",
+#         axis.line = element_line(size=0.2),
+#         axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),
+#         plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+# 
+# ggplot(tmp[which(tmp$variable == "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed, color=`Additive/Preservative`)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.5) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("blue","yellow","green",  "red") )+
+#     theme(panel.background = element_blank(),
+#           legend.title = element_text(size=7),
+#           legend.position = "bottom",
+#           axis.line=element_line(linewidth=0.2),
+#           axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))
+  
+  #ggplot(hemo_plasma,aes(x = BioPack_BoxID_v1r0, y = Box_Temperature_arrival,fill=Hemolyzed),size = 3,color="black",vjust = -0.20,position = position_dodge(width=-0.6),angle=-35) + 
+#  geom_bar(position="stack",stat="identity",na.rm=TRUE,color="grey")+ 
+   
+#   scale_fill_manual(values = c("white","lightblue","yellow",  "red","pink") )
+# ggplot(hemo_plasma,aes(x = BioPack_BoxID_v1r0, y = Box_Temperature_arrival,fill=Hemolyzed),size = 3,color="black",vjust = -0.20,position = position_dodge(width=-0.6),angle=-35) + 
+#   geom_bar(position="stack",stat="identity",na.rm=TRUE,color="grey")+ 
+#   
+#   scale_fill_manual(values = c("white","lightblue","yellow",  "red","pink") )+
+#   scale_y_continuous(name="Individuals, N", breaks=c(100,500,1000,1500,2000,2500,3000) )+
+#   #scale_x_discrete(limits=c("Initial Srv+Blood","Blood.Only","Survey.Only","Verified.noActivities","Expected.toVerified"),drop=FALSE)+
+#   geom_text(aes(y=label.count, label= Expected_Verified_n),color="black",vjust=1.0,size=3.0) + labs(x = "", y = "# Participants") + 
+#   stat_summary(fun.y = sum, aes(label = ..y.., group = Site), geom = "text",hjust = 1.5,vjust=-0.5,size=3.5) +
+#   labs( title=str_wrap(paste("Total Expected Recruits vs Actual Verified Recruitments vs. \nNumbers of Blood Collections till",currentDate, sep=" "),  60),
+#         x = "Recruitment Sites")+
+#   theme(panel.background = element_blank(),
+#         legend.title = element_text(size=7),
+#         legend.position = c(0.75,0.9),
+#         axis.line = element_line(size=0.2),
+#         axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                                                            
+#         plot.title = element_text(hjust = 0.5,size = 12, face = "bold")) 
+```
+
+Here is the tables for the file "HP Streck tube pilot analysis plan for Jing Feb 2024_updated.docx" with more comments from Stephanie after the meeting on Wednesday, Feb. 7, 2024.
+
+1\. Cross tab frequency of the categorical hemolysis outcome by tube type.  For tube type you can use the additive/preservative in column T, to add the "total across rows"
+
+```{r}
+#| hide:
+#| echo: false
+#| eval: true
+#| code-fold: true
+#| code-summary: "Show the code"
+
+hemo_additive <- hemolysis %>% 
+  dplyr::select(Hemolyzed,hemolysis$anticoagulant) %>%
+  tbl_cross(col = Hemolyzed,
+            row = anticoagulant,
+            label = list(Hemolyzed~"Hemolysis outcomes",
+                         anticoagulant ~"Anticoagulants/Preservative" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Blood Samples",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+            modify_header() 
+
+hemo_additive2 <- hemolysis %>% 
+  dplyr::select(Hemolyzed,anticoagulant) %>%
+  tbl_cross(col = Hemolyzed,
+            row = anticoagulant,
+            label = list(Hemolyzed~"Hemolysis outcomes",
+                         anticoagulant ~"Anticoagulants/Preservative" ),
+            digits=c(0,2),
+            percent = c("row"),
+            margin_text = "Total Blood Samples",
+            missing = "no") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+            modify_header() 
+
+hemo_additive1 <- hemolysis %>% 
+  dplyr::select(hemo_class,anticoagulant) %>%
+  tbl_cross(col = hemo_class,
+            row = anticoagulant,
+            label = list(hemo_class~"Hemolysis outcomes",
+                         anticoagulant ~"Anticoagulants/Preservative" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Blood Samples",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+            modify_header(stat_1 = "Not Hemolyzed (1)", 
+                          stat_2 = "Slighted Hemolyzed (2-3)" ,
+                          stat_3 = "Moderate (4-5)/Servere Hemolyzed (6-7)",
+                          stat_4 = "Uknown/Missing")
+                          
+                          
+                          
+                          
+```
+
+## 3. Examine the percent of hemolysis (any hemolysis yes/no and moderate & severe yes/no) of the Streck DNA Stabilizer tube by phlebotomist (initials in column Y)
+
+a.  Row percents, total number will be row denominator;
+
+b.  to combine the initials: CG and CSG, All three of these are one person (OJ, OJS, OS);
+
+```{r}
+hemolysis <- hemolysis %>% 
+  mutate(Phlebotomist = ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("CG","CSG"),"CG/CSG", ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("OJ","OJS","OS"), "OJ/OJS/OS",toupper(BioCol_PhlebInitials_v1r0) )))
+table(hemolysis$Phlebotomist,hemolysis$anticoagulant)
+  #          
+  #           EDTA = K2 Lithium Heparin SST Streck DNA Stabilizer
+  # AM              104              67 209                   104
+  # AN               14               9  28                    14
+  # CG/CSG           71              32 143                    71
+  # OJ/OJS/OS       106              76 216                   105
+  # WC               59              31 122                    59
+
+
+hemo_phlebotomist <- hemolysis %>% 
+  select(hemo_flag,Phlebotomist) %>%
+  tbl_cross(col = hemo_flag,
+            row = Phlebotomist,
+            label = list(hemo_flag~"Any hemolysis",
+                         Phlebotomist ~"Phlebotomist" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Blood",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo_phlebotomist1 <- hemo_plasma %>% 
+    select(hemo_flag,Phlebotomist) %>%
+    tbl_cross(col = hemo_flag,
+              row = Phlebotomist,
+              label = list(hemo_flag~"Any hemolysis",
+                           Phlebotomist ~"Phlebotomist" ),
+              digits=c(0,2),
+              percent = c("col"),
+              missing = "ifany",
+              margin_text = "Total Plasma Samples",
+              missing_text = "(Missing)") %>%
+    bold_labels() %>%
+    #italicize_levels() %>% 
+    modify_header() 
+
+hemo_phlebotomist2 <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>% mutate(Phlebotomist = ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("CG","CSG"),"CG/CSG", ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("OJ","OJS","OS"), "OJ/OJS/OS",toupper(BioCol_PhlebInitials_v1r0) ))) %>% 
+    select(hemo_flag,Phlebotomist) %>%
+    tbl_cross(col = hemo_flag,
+              row = Phlebotomist,
+              label = list(hemo_flag~"Any hemolysis",
+                           Phlebotomist ~"Phlebotomist" ),
+              digits=c(0,2),
+              percent = c("col"),
+              missing = "no",
+              margin_text = "Total Blood Samples") %>%
+    bold_labels() %>%
+    #italicize_levels() %>% 
+    modify_header(stat_0 ~"Total Streck Tubes",
+                  stat_1 ~"Not Hemolyzed (1)", 
+                  stat_2 = "Any Hemolyzed (2-7)" ) 
+
+hemo_phlebotomist3 <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>% mutate(Phlebotomist = ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("CG","CSG"),"CG/CSG", ifelse(toupper(BioCol_PhlebInitials_v1r0) %in% c("OJ","OJS","OS"), "OJ/OJS/OS",toupper(BioCol_PhlebInitials_v1r0) ))) %>% 
+    select(hemo_class,Phlebotomist) %>%
+    tbl_cross(col = hemo_class,
+              row = Phlebotomist,
+              label = list(hemo_class~"Moderate /Servere hemolysis (2-7)",
+                           Phlebotomist ~"Phlebotomist" ),
+              digits=c(0,2),
+              percent = c("col"),
+              missing = "no",
+              margin_text = "Total Blood Samples") %>%
+    bold_labels() %>%
+    #italicize_levels() %>% 
+    modify_header(stat_0 ~"Total Streck Tubes",
+                  stat_1 ~"Not Hemolyzed (1)", 
+                  stat_2 = "Slightly Hemolyzed (2-3)",
+                  stat_3 = "Moderate (4-5)/Servere Hemolyzed (6-7)" ) 
+```
+
+4\. Examine the percent of hemolysis (any hemolysis yes/no and moderate & severe yes/no) of the Streck DNA Stabilizer tube by clinical vs research collection (clinical = had data in column G; research = has data in column H)
+
+```{r}
+hemo_Setting <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>% 
+    select(hemo_flag,BioSpm_Setting_v1r0) %>%
+    tbl_cross(col = hemo_flag,
+              row = BioSpm_Setting_v1r0,
+              label = list(hemo_flag~"Any hemolysis (2-7)",
+                           BioSpm_Setting_v1r0 ~"Setting" ),
+              digits=c(0,2),
+              percent = c("row"),
+              missing = "ifany",
+              margin_text = "Total Blood Streck Samples",
+              missing_text = "Missing") %>%
+    bold_labels() %>%
+    #italicize_levels() %>% 
+    modify_header(stat_0 ~"Total Streck Tubes",
+                  stat_1 ~"Not Hemolyzed (1)", 
+                  stat_2 = "Any Hemolyzed (2-7)") 
+
+hemo_Setting1 <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>% 
+    select(hemo_class,BioSpm_Setting_v1r0) %>%
+    tbl_cross(col = hemo_class,
+              row = BioSpm_Setting_v1r0,
+              label = list(hemo_class~"Moderate /Servere hemolysis (4-7)",
+                           BioSpm_Setting_v1r0 ~"Setting" ),
+              digits=c(0,2),
+              percent = c("row"),
+              missing = "ifany",
+              margin_text = "Total Blood Streck Samples",
+              missing_text = "Missing") %>%
+    bold_labels() %>%
+    #italicize_levels() %>% 
+    modify_header(stat_0 ~"Total Streck Tubes",
+                  stat_1 ~"Not Hemolyzed (1)", 
+                  stat_2 = "Slightly Hemolyzed (2-3)",
+                  stat_3 = "Moderate (4-5)/Servere Hemolyzed (6-7)" ) 
+```
+
+5.Examine the percent of hemolysis (any hemolysis yes/no and moderate & severe yes/no) of the Streck DNA Stabilizer tube by needle-to-receipt time in days
+
+(Column Q = Needle to receipt time in days)
+
+```{r}
+hemo_NeedleRecpt <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>%   dplyr::select(hemo_flag,days_received_drawn) %>%
+  tbl_cross(col = hemo_flag,
+            row = days_received_drawn,
+            label = list(hemo_flag~"Any Hemolysis",
+                         days_received_drawn ~"Days from Blood Drawn to Received" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Plasma",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo_NeedleRecpt1 <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>%   dplyr::select(hemo_class,days_received_drawn) %>%
+  tbl_cross(col = hemo_class,
+            row = days_received_drawn,
+            label = list(hemo_class~"mod or severe hemolysis",
+                         days_received_drawn ~"Days from Blood Drawn to Received" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Plasma",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+```
+
+6.Examine the percent of hemolysis (any hemolysis yes/no and moderate & severe yes/no) of the Streck DNA Stabilizer[\[SO1\]](#_msocom_1)  tube by needle-to-processed time in days
+
+(Column R = Needle to processed time in days)
+
+ [\[SO1\]](#_msoanchor_1)For Streck tubes only and fill in the table
+
+```{r}
+hemo_NeedleProcess <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>%   dplyr::select(hemo_flag,days_drawn_process_cat) %>%
+  tbl_cross(col = hemo_flag,
+            row = days_drawn_process_cat,
+            label = list(hemo_flag~"Any Hemolysis",
+                         days_drawn_process_cat ~"Days from Blood Drawn to Processed" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Streck Tubes",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo__NeedleProcess1 <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>%   dplyr::select(hemo_class,days_drawn_process_cat) %>%
+  tbl_cross(col = hemo_class,
+            row = days_drawn_process_cat,
+            label = list(hemo_class~"mod or severe hemolysis",
+                         days_drawn_process_cat ~"Days from Blood Drawn to Processed" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Streck Tubes",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+hemo_lipemic <- filter(hemolysis, `Additive/Preservative` == "Streck DNA Stabilizer") %>% mutate(Specimen_Character=ifelse(is.na(`Specimen Character`), "not mentioned",`Specimen Character`)) %>%   dplyr::select(hemo_class,Specimen_Character) %>%
+  tbl_cross(col = hemo_class,
+            row = Specimen_Character,
+            label = list(hemo_class~"mod or severe hemolysis",
+                         Specimen_Character ~"Sample Characters" ),
+            digits=c(0,2),
+            percent = c("row"),
+            missing = "ifany",
+            margin_text = "Total Streck Tubes",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() %>%
+            modify_header(stat_0 ~"Total Streck Tubes",
+                  stat_1 ~"Not Hemolyzed (1)", 
+                  stat_2 = "Slightly Hemolyzed (2-3)",
+                  stat_3 = "Moderate (4-5)/Servere Hemolyzed (4-7)" ) 
+
+
+tubes_lipemic0 <- hemolysis %>% mutate(Specimen_Character=ifelse(is.na(`Specimen Character`), "not mentioned",`Specimen Character`)) %>%   dplyr::select(anticoagulant,Specimen_Character) %>%
+    tbl_cross(col = anticoagulant,
+              row = Specimen_Character,
+              label = list(anticoagulant~"Additive /Preservative",
+                           Specimen_Character ~"Sample Characters" ),
+              digits=c(0,2),
+              percent = c("row"),
+              missing = "ifany",
+              margin_text = "Total Streck Tubes",
+              missing_text = "(Missing)") %>%
+    bold_labels() %>%
+    #italicize_levels() %>% 
+    modify_header() %>%
+    modify_header(stat_0 ~"Total Blood Tubes",
+                  stat_1 ~"EDTA = K2", 
+                  stat_2 = "Lithium Heparin",
+                  stat_3 = "Streck DNA Stabilizer", 
+                  stat_4 = "SST") 
+
+nolip_strk <- filter(hemolysis, is.na(`Specimen Character`)) 
+                     
+                     
+```
+
+8.Plot all categories of hemolysis (all categories) by lowest temperature (column Z ” Box Lowest Temp during Transit”) with temperature across the X axis and hemolysis categories on the Y axis (not hemolyzed at the bottom and then slight, then moderate, then severe going up the y axis) and plot each point for the Streck DNA Stabilizer tubes only.[\[SO1\]](#_msocom_1) 
+
+ [\[SO1\]](#_msoanchor_1)Redo with Streck tube only and drop the temp change one
+
+```{r}
+tmp2 <- melt(hemolysis[which(hemolysis$`Additive/Preservative` == "Streck DNA Stabilizer"),c("Hemolyzed","anticoagulant","Box_Temperature_arrival","Box_Teperature_Lowest_transit","Temperature_changes_C","days_drawn_processed")], id.vars= c("Hemolyzed", "anticoagulant"))
+
+print(ggplot(tmp2[which(tmp2$variable != "days_drawn_processed"),], aes(x=Hemolyzed,y=value, fill=Hemolyzed)) +geom_jitter(alpha=0.2) +geom_violin(alpha=0.50) + facet_grid(variable ~.) + scale_y_sqrt() + scale_fill_manual(values = c("lightblue","yellow","pink",  "red") )+
+    theme(panel.background = element_blank(),
+          legend.title = element_text(size=7),
+          legend.position = "bottom",
+          axis.line=element_line(linewidth=0.2),
+          axis.text.x = element_text(hjust = 0.5,size = 8, face = "bold"),                             plot.title = element_text(hjust = 0.5,size = 12, face = "bold"))  ) 
+```
+
+```{r}
+hemo_plasma.dup <- filter(hemo_plasma, BioSpm_ColIDScan_v1r0...6 %in% collectID.nodup, grepl("Streck|EDTA",`Additive/Preservative` )) 
+table(hemo_plasma.dup$Hemolyzed,hemo_plasma.dup$`Additive/Preservative`)
+
+
+plasma_dup_check1 <- hemo_plasma.dup %>% select(Connect_ID, BioSpm_ColIDScan_v1r0...6, anticoagulant,Hemolyzed) %>% group_by(Connect_ID, BioSpm_ColIDScan_v1r0...6 ) %>% pivot_wider(names_from= anticoagulant, values_from=Hemolyzed, values_fill=NA)
+
+plasma_dup_check1 <- plasma_dup_check1 %>% 
+  mutate( hemolyzed_both = case_when(`EDTA = K2` == `Streck DNA Stabilizer` ~ paste0("both= ", `EDTA = K2`) ,
+                                    "EDTA = K2" != "Streck DNA Stabilizer" ~ paste(`Streck DNA Stabilizer`,`EDTA = K2`,sep=" vs "))) 
+  plasma_dup_pairs <- plasma_dup_check1 %>% select(hemolyzed_both) %>% tbl_summary(
+    statistic = list(all_categorical() ~ "{n} / {N} ({p}%)")) %>%
+    #add_p(pvalue_fun = ~ style_pvalue(.x, digits = 2)) %>%
+    #add_overall() %>%
+    add_n() %>%
+    modify_header(label ~ "**Variable**") %>%
+    #modify_spanning_header(c("stat_1", "stat_2") ~ "**Hemolyzed Status**") %>%
+    modify_footnote(
+        all_stat_cols() ~ "EDTA vs Streck on Hemolysis"
+    ) %>%
+    modify_caption("**Table 1. Blood Plasma Collection on Hemolysis in pairs**") %>%
+    bold_labels() %>%
+    as_kable_extra(escape = FALSE, addtl_fmt = TRUE)
+  
+  plasma_dup_check2 <- hemo_plasma.dup %>% select(Connect_ID, BioSpm_ColIDScan_v1r0...6, anticoagulant,Specimen_Character) %>% group_by(Connect_ID, BioSpm_ColIDScan_v1r0...6 ) %>% pivot_wider(names_from= anticoagulant, values_from=Specimen_Character, values_fill=NA) %>% mutate( lipedmia_both = case_when(`EDTA = K2` == `Streck DNA Stabilizer` ~ paste0("both= ", `EDTA = K2`) ,
+                                    "EDTA = K2" != "Streck DNA Stabilizer" ~ paste(`Streck DNA Stabilizer`,`EDTA = K2`,sep=" vs "))) 
+  
+  
+
+```
+
+Feb. 27, 2024, Stephanie has just sent me another data set (<https://nih.app.box.com/file/1456100207253?s=or6sg8xxj0jrohn0ia8z5p6760ti82gh>) [which](https://nih.app.box.com/file/1456100207253?s=or6sg8xxj0jrohn0ia8z5p6760ti82gh) to check "
+
+([https://app.box.com/s/or6sg8xxj0jrohn0ia8z5p6760ti82gh](https://gcc02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fapp.box.com%2Fs%2For6sg8xxj0jrohn0ia8z5p6760ti82gh&data=05%7C02%7Cjing.wu2%40nih.gov%7Cca46c2b005884d4f0efa08dc37e33484%7C14b77578977342d58507251ca2dc2b06%7C0%7C0%7C638446696170775202%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=es8Z1%2FgoB93ndi9KKeDoSXm9kK9LiraWa8xjgt3G0Vk%3D&reserved=0 "https://gcc02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fapp.box.com%2Fs%2For6sg8xxj0jrohn0ia8z5p6760ti82gh&data=05%7C02%7Cjing.wu2%40nih.gov%7Cca46c2b005884d4f0efa08dc37e33484%7C14b77578977342d58507251ca2dc2b06%7C0%7C0%7C638446696170775202%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=es8Z1%2FgoB93ndi9KKeDoSXm9kK9LiraWa8xjgt3G0Vk%3D&reserved=0")  (using the first tab in the spreadsheet called “first aliquot”).
+
+ 
+
+I have selected 40 samples from the file that we are going to send out for some assays.  I selected all the samples that are frozen (n=11), then the rest were selected based on the needle-to-frozen time, trying to get a distribution of that.  We hope we also end up with a variety of hemolysis.  
+
+ 
+
+The last column shows which ones have been selected:
+
+1=selected (not frozen); 2= selected (frozen); 3=not selected
+
+ 
+
+Could you use the data in the file to fill in the attached tables?  I want to make sure that the samples we selected are representative of all of the samples in the file.  Note that the first 28 that have a missing or negative needle-to-frozen time should be remove from the analysis.
+
+ 
+
+Use the column: “needle to frozen SJW calculation” for the calculations in the second table."
+
+```{r}
+
+box_setwd(dir_id =244206033569)
+batch2 <- box_read(file_id=1456100207253) 
+
+batch2 <- batch2 %>% mutate(Selected = case_when(selected==1 ~'selected (not frozen)',
+                                                  selected==2 ~ 'selected (frozen)',
+                                                  selected==3 ~ 'not selected'),
+                             Selected = factor(Selected, levels= c("selected (not frozen)","selected (frozen)","not selected")),
+                             Specimen_Character=ifelse(is.na(`Specimen Character`), "not mentioned",`Specimen Character`),
+                             Hemolyzed = factor(Hemolyzed, levels= c("not hem (1)","slight hemo (2-3)","mod hem(4-5)", "severe hemo (6-7)" ))) 
+
+batch2$days_drawn_processed =difftime(batch2$"Date Processed", batch2$"Date Drawn",units="days")
+hemo_select <- filter(batch2, `needle to frozen SJW calculation` >=0) %>% 
+  select(Hemolyzed,Selected) %>%
+  tbl_cross(col = Hemolyzed,
+            row = Selected,
+            label = list(Hemolyzed~"Hemolyzed status",
+                         Selected ~"Selected Settings" ),
+            digits=c(0,2),
+            percent = c("col"),
+            missing = "ifany",
+            margin_text = "Total Plasma",
+            missing_text = "(Missing)") %>%
+            bold_labels() %>%
+           #italicize_levels() %>% 
+           modify_header() 
+
+select1 <- filter(batch2, `needle to frozen SJW calculation` >=0) %>% select(Selected,`needle to frozen SJW calculation`) %>% 
+  group_by(Selected) %>% 
+  dplyr::summarize(`Number Selected`=n(),
+                   min = min(`needle to frozen SJW calculation`),
+                   pct10 = quantile(`needle to frozen SJW calculation`, 0.10),
+                   q1 = quantile(`needle to frozen SJW calculation`, 0.25),
+                   median = median(`needle to frozen SJW calculation`),
+                   mean = mean(`needle to frozen SJW calculation`),sd=sd(`needle to frozen SJW calculation`),
+                   q3 = quantile(`needle to frozen SJW calculation`, 0.75),
+                   pct90 = quantile(`needle to frozen SJW calculation`, 0.90),
+                   max = max(`needle to frozen SJW calculation`))
+
+select0 <- filter(batch2, `needle to frozen SJW calculation` >=0) %>% select(Selected,`needle to frozen SJW calculation`) %>% 
+  dplyr::summarize(`Number Selected`=n(),
+                   min = min(`needle to frozen SJW calculation`),
+                   pct10 = quantile(`needle to frozen SJW calculation`, 0.10),
+                   q1 = quantile(`needle to frozen SJW calculation`, 0.25),
+                   median = median(`needle to frozen SJW calculation`),
+                   mean = mean(`needle to frozen SJW calculation`),sd=sd(`needle to frozen SJW calculation`),
+                   q3 = quantile(`needle to frozen SJW calculation`, 0.75),
+                   pct90 = quantile(`needle to frozen SJW calculation`, 0.90),
+                   max = max(`needle to frozen SJW calculation`))
+
+```
