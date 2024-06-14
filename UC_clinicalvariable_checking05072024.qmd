@@ -1,0 +1,383 @@
+---
+title: "UC_clinicalvariable_checking"
+author: "Jing Wu"
+format: html
+editor: visual
+---
+
+## UC clinical variables testing
+
+All the documents and SOP are seen in Box "https://nih.app.box.com/file/1518648186797"
+
+all the testing will start in dev
+
+```{r}
+#| echo: false
+library(DBI) #the higher level BQ for working
+library(bigrquery) 
+library(data.table) ###to write or read and data management 
+# library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management https://tidyselect.r-lib.org/reference/faq-external-vector.html
+library(dplyr) ###data management some functions are not available in the dplyr masked in the tidyverse
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+#library(sqldf) ##sql
+library(lubridate) ###date time it is already masked in 'tidyverse'
+library(ggplot2) ###plots
+library(ggrepel)
+library(ggpubr) ###for the publications of plots
+library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
+library(gridExtra)
+#library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tidyr)
+library(tinytex) #for pdf
+#library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html t
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+#library(summarytools) ##recommended not applied in this R code
+library(gmodels) ##recommended but not applied in this R code
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+#library(patchwork)
+library(rio)
+library(glue)
+#janitor::adorn_totals() for total
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+
+#to download the recruitment data and corresponding Connect master DD
+#options(knitr.table.format = "latex")
+currentDate <- Sys.Date()
+
+#dictionary <- rio::import("https://github.com/episphere/conceptGithubActions/blob/master/aggregateCopy.json",format = "json")
+dictionary <- rio::import("https://episphere.github.io/conceptGithubActions/aggregateCopy.json",format = "json")
+dd <- dplyr::bind_rows(dictionary,.id="CID")
+#dd <- dd[!duplicated(dd),] #remove 140duplicates
+#THIS TABLE HAS REPLICATED (CIDS+LABELS) WITH DIFFERENT VARIABLE NAMES,
+dd$`Variable Label` <- ifelse(is.na(dd$`Variable Label`), dd$`Variable Name`, dd$`Variable Label`)
+#dd <- as.data.frame.matrix(do.call("rbind",dictionary)) #3523, some CID and labels are linked to different variable names 
+
+#dd1 <- dd[!duplicated(dd[,c("CID","Variable Label")]),]
+length(unique(dd$CID))
+
+#the master dd with more info. on the formats (levels)
+urlfile<- "https://raw.githubusercontent.com/episphere/conceptGithubActions/master/csv/masterFile.csv" ###to grab the updated dd from github
+dd.y <- read.csv(urlfile)
+#dd$labels.combo <- paste(dd$`Variable Label`,dd$`Variable Name`,sep="$")
+ bq_auth()
+#The bigrquery package is requesting access to your Google account.
+#Select a pre-authorised account or enter '0' to obtain a new token.
+#Press Esc/Ctrl + C to cancel.
+
+  2 #: wuj12@nih.gov
+  project <- "nih-nci-dceg-connect-dev"
+  billing <- "nih-nci-dceg-connect-dev"  
+
+  
+ #03.27.2024 data destruction stage:
+ project <- "nih-nci-dceg-connect-stg-5519"
+ billing <- "nih-nci-dceg-connect-stg-5519"
+  
+  
+  con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "FlatConnect",
+  billing = billing
+)
+
+dbListTables(con)
+
+outputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/data/"
+
+fun.query_id  <- function(y,x,select,id){
+  
+id1 <- paste(id,collapse=",")
+query <-  eval(parse(text=paste("bq_project_query(project, query=\"SELECT ", select," FROM `",project,".",y,".",x, "` where cast(Connect_ID as int64) in (",id1,")\")",sep="")))
+
+tb_id <- bq_table_download(query,bigint="character",n_max = Inf, page_size = 500)  
+tmp<- tb_id %>% mutate(dataname= x)
+return(tmp)
+}
+
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+#| echo: false
+
+
+recr_var <- bq_project_query(project, query=glue("SELECT * FROM  `",{project},".FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants_JP'"))
+
+recrvar          <- bigrquery::bq_table_download(recr_var, bigint = "integer64")
+
+recrvar1 <- recrvar %>% 
+  mutate(CID.1st = ifelse(str_count(column_name,"d_|D_")==0, column_name, substring(str_split_i(column_name,"d_",2),1,9)),
+         last.CID = ifelse(grepl("\\d{9}",column_name),substring(sapply(strsplit(column_name,"D_|d_"),tail,1),1,9),NA))
+
+dd.y$CID <- as.character(dd.y$CID)
+#recrvar1 <- merge(recrvar1, dd,by.x="last.CID",by.y="CID",all.x=TRUE) 
+recrvar1 <- merge(recrvar1, dd.y[,c("conceptId.3","Variable.Name","Variable.Label")],by.x="last.CID",by.y="conceptId.3",all.x=TRUE) 
+
+
+recrvar1 <- recrvar1 %>% 
+  mutate(drop_dup=ifelse(grepl("862774033|868006655|ANY_SPECIMEN",column_name), 0, 
+                  ifelse(!grepl("266600170|496823485|650465111|303552867|740819233",column_name),0,
+                  ifelse(grepl("266600170",column_name) & grepl("BL_v1r0", Variable.Name), 0,
+                  ifelse(grepl("496823485",column_name) & grepl("F1", Variable.Name),0,
+                  ifelse(grepl("650465111",column_name) & grepl("F2", Variable.Name),0,
+                  ifelse(grepl("303552867",column_name) & grepl("F3", Variable.Name), 0,
+                  ifelse(grepl("740819233",column_name) & grepl("F4", Variable.Name), 0,
+                  ifelse(grepl("d_637153953_d_740819233",column_name) & grepl("SrvBOH_C", Variable.Name),0, 1)))))))))
+
+recrvar1 <- filter(recrvar1,drop_dup==0) 
+recrvar2<-recrvar1[!duplicated(recrvar1$column_name),]
+recr.bio <- filter(recrvar2,grepl("Bio",Variable.Name))
+
+part_var <- bq_project_query(project, query=glue("SELECT * FROM  `",{project},".Connect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='participants'"))
+
+partvar          <- bigrquery::bq_table_download(part_var, bigint = "integer64")
+partvar1 <- filter(partvar,!grepl("key|error",field_path) & !grepl("STRUCT",data_type))  %>% 
+    mutate(CID.1st = ifelse(str_count(tolower(field_path),"d_")==0, field_path, substring(str_split_i(tolower(field_path),"d_",2),1,9)),
+           last.CID = ifelse(grepl("\\d{9}",field_path),substring(sapply(strsplit(tolower(field_path),"d_"),tail,1),1,9),NA))
+partvar1 <- merge(partvar1, dd,by.x="last.CID",by.y="CID",all.x=TRUE) 
+partvar1 <- merge(partvar1, dd.y[,c("conceptId.3","Variable.Name","Variable.Label")],by.x="last.CID",by.y="conceptId.3",all.x=TRUE) 
+
+
+partvar1 <- partvar1 %>% 
+    mutate(drop_dup=ifelse(grepl("862774033|868006655|ANY_SPECIMEN",field_path), 0, 
+                           ifelse(!grepl("266600170|496823485|650465111|303552867|740819233",field_path),0,
+                                  ifelse(grepl("266600170",field_path) & grepl("BL", Variable.Name), 0,
+                                         ifelse(grepl("496823485",field_path) & grepl("F1", Variable.Name),0,
+                                                ifelse(grepl("650465111",field_path) & grepl("F2", Variable.Name),0,
+                                                       ifelse(grepl("303552867",field_path) & grepl("F3", Variable.Name), 0,
+                                                              ifelse(grepl("740819233",field_path) & grepl("F4", Variable.Name), 0,
+                                                                     ifelse(grepl("d_637153953_d_740819233",field_path) & grepl("SrvBOH_C", Variable.Name),0, 1)))))))))
+tmp <- filter(partvar1,drop_dup==0) 
+tmp<-tmp[!duplicated(tmp$field_path),] %>% filter(.,description %nin% c("treeJSON","COMPLETED","sha"))
+
+
+schem_bio <- bq_project_query(project, query=glue("SELECT * FROM `",{project},".FlatConnect`.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS WHERE table_name='biospecimen_JP'"))
+bioschem<- bq_table_download(schem_bio,bigint="integer64")
+
+
+#to select the variables needed for the SH testing, mainly for the baseline collections
+bioclin.vars <- c("693370086","786930107","982213346","139245758","185243482","452847912","728696253","453452655","878865966","167958071","198261154","543608829","224596428","822274939","453452655","534041351","210921343","398645039")
+
+common.vars <- c("Connect_ID","token","pin","827220437","821247024","512820379","173836415")
+
+biospe.vars <- c("926457119","825582494""646899796")
+
+```
+
+BioClin_SiteBloodColl_v1r0 (d_173836415_d_266600170_d_693370086) = 1 (353358909) BioClin_SiteUrineColl_v1r0 (d_173836415_d_266600170_d_786930107) = 1 (353358909) BioClin_ClinBloodTime_v1r0 (d_173836415_d_266600170_d_982213346) = populated BioClin_ClinicalUrnTime_v1r0 (d_173836415_d_266600170_d_139245758) = populated BioClin_SiteBlLocation_v1r0 (d_173836415_d_266600170_d_185243482) = populated (num length up to 15) BioClin_SiteUrLocation_v1r0 (d_173836415_d_266600170_d_452847912) = populated (num length up to 15)
+
+BioClin_PolyBloodIDBL_v1r0 (d_173836415_d_266600170_d_543608829) = populated BioClin_PolyUrineIDBL_v1r0 (d_173836415_d_266600170_d_110349197) = populated
+
+```{r}
+
+bioclin.vars <- c("693370086","786930107","982213346","139245758","185243482","452847912","728696253","453452655","878865966","167958071","198261154","543608829","224596428","822274939","453452655","534041351","210921343","398645039")
+
+bioclin.vars.labels <- recrvar2$Variable.Label[grepl(paste(bioclin.vars,collapse="|"),recrvar2$column_name)]
+bioclin.vars.Names <- recrvar2$Variable.Name[grepl(paste(bioclin.vars,collapse="|"),recrvar2$column_name)]
+
+common.vars <- c("Connect_ID","token","pin","827220437","821247024","512820379","173836415")
+
+biospe.vars <- c("926457119","646899796","825582494")
+#bioschem1[grepl("926457119",bioschem1$field_path),]
+
+id <- "3278628334" #to be updated for the testing
+recr_check <- fun.query_id("FlatConnect","participants_JP","*",id)
+recr_vars <- recr_check %>% select(contains(common.vars))
+
+recr_vars.t <- as.data.frame(t(recr_vars)) 
+names(recr_vars.t) <- "checkID_3278628334"
+recr_vars.t$column_name <- rownames(recr_vars.t)
+recr_vars.t <- merge(recr_vars.t,recr.bio[,c("column_name","Variable.Name")], by.x="column_name",by.y="column_name",all.x=T)
+bio_check <- fun.query_id("FlatConnect","biospecimen_JP","*",id)
+bio_check_1 <- bio_check %>% select(Connect_ID, contains(biospe.vars))
+```
+
+```{r}
+
+id1 <-  c(2961459804, 4726800718)
+recr_check <- fun.query_id("FlatConnect","participants_JP","*",id1)
+recr_vars <- recr_check %>% select(contains(common.vars))
+
+recr_vars.t <- as.data.frame(t(recr_vars)) 
+names(recr_vars.t) <- "checkID_2961459804"
+recr_vars.t$column_name <- rownames(recr_vars.t)
+recr_vars.t <- merge(recr_vars.t,recr.bio[,c("column_name","Variable.Name")], by.x="column_name",by.y="column_name",all.x=T)
+bio_check <- fun.query_id("FlatConnect","biospecimen_JP","*",id1)
+bio_check_1 <- bio_check %>% select(Connect_ID, contains(biospe.vars))
+bio_check.t <-t(bio_check_1)
+bio_chek.t <- t(bio_check)
+
+```
+
+#the second ID
+
+```{r}
+id2 <-  4726800718
+recr_check2 <- fun.query_id("FlatConnect","participants_JP","*",id2)
+recr_vars2 <- recr_check %>% select(contains(common.vars))
+
+recr_vars2.t <- as.data.frame(t(recr_vars2)) 
+names(recr_vars2.t) <- "checkID_4726800718"
+recr_vars2.t$column_name <- rownames(recr_vars2.t)
+recr_vars2.t <- merge(recr_vars2.t,recr.bio[,c("column_name","Variable.Name")], by.x="column_name",by.y="column_name",all.x=T)
+bio_check2 <- fun.query_id("FlatConnect","biospecimen_JP","*",id2)
+bio_check_2 <- bio_check %>% select(Connect_ID, contains(biospe.vars ))
+```
+
+for the second scenario if the tables are synched yet. I will switch to the source tables with self-flattening via R
+
+```{r}
+  
+con0 <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "Connect",
+  billing = billing
+)
+  
+
+  dbListTables(con0)
+
+  id1 <-  c(2961459804, 4726800718)
+  part_check <- fun.query_id("Connect","participants","*",id1)
+part_vars <- part_check %>% select(contains(common.vars))
+part_vars$rows <- rownames(part_vars)
+d173836415 <- as.data.frame(rbindlist(part_vars$d_173836415, use.names=TRUE, fill=TRUE, idcol="rows"))
+d_173836415_266 <- as.data.frame(do.call(rbind,d173836415[,"d_266600170"],quote=T))
+names(d_173836415_266) <- paste("d_173836415.d_266600170",names(d_173836415_266),sep=".")
+d_173836415_combo <- cbind(d173836415,d_173836415_266)
+
+
+excl_col <- c("V1","V2","__key__","__key__")
+d_173836415_combo <- d_173836415_combo[,-which(names(d_173836415_combo) %in% excl_col)]
+d_173836415_parti <- merge(d_173836415_combo,part_vars[,c("token","Connect_ID","rows")], by="rows")
+d_173836415_parti$d_266600170 <- as.character(d_173836415_parti$d_266600170)
+
+
+d_173836415_parti.t <- as.data.frame(t(d_173836415_parti)) 
+names(d_173836415_parti.t) <- unlist(d_173836415_parti.t[which(row.names(d_173836415_parti.t)=="Connect_ID"),])
+```
+
+May 20. the UC Clinical Variables E2E Stage Testing
+
+```{r}
+
+ project <- "nih-nci-dceg-connect-stg-5519"
+ billing <- "nih-nci-dceg-connect-stg-5519"
+  
+  
+  con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "FlatConnect",
+  billing = billing
+)
+
+dbListTables(con)
+
+id1 <-  c(3962583227)
+recr_check <- fun.query_id("FlatConnect","participants_JP","*",id1)
+recr_vars <- recr_check %>% select(contains(common.vars))
+
+recr_vars.t <- as.data.frame(t(recr_vars)) 
+names(recr_vars.t) <- "checkID_3962583227"
+recr_vars.t$column_name <- rownames(recr_vars.t)
+recr_vars.t <- merge(recr_vars.t,recr.bio[,c("column_name","Variable.Name")], by.x="column_name",by.y="column_name",all.x=T)
+bio_check <- fun.query_id("FlatConnect","biospecimen_JP","*",id1)
+bio_check_1 <- bio_check %>% select(Connect_ID, contains(biospe.vars))
+bio_check.t <-t(bio_check_1)
+bio_chek.t <- t(bio_check)
+
+id2 <- 8257971326
+
+recr_check2 <- fun.query_id("FlatConnect","participants_JP","*",id2)
+recr_vars2 <- recr_check2 %>% select(contains(common.vars))
+
+recr_vars2.t <- as.data.frame(t(recr_vars2)) 
+names(recr_vars2.t) <- "checkID_8257971326"
+recr_vars.t2$column_name <- rownames(recr_vars2.t)
+recr_vars2.t <- merge(recr_var2s.t,recr.bio[,c("column_name","Variable.Name")], by.x="column_name",by.y="column_name",all.x=T)
+bio_check2 <- fun.query_id("FlatConnect","biospecimen_JP","*",id2)
+bio_check_2 <- bio_check2 %>% select(Connect_ID, contains(biospe.vars))
+bio_check2.t <-t(bio_check_2)
+bio_chek2.t <- t(bio_check2)
+
+
+id12 <-  c(3962583227, 8257971326)
+recr_check12 <- fun.query_id("FlatConnect","participants_JP","*",id12)
+recr_vars <- recr_check %>% select(contains(common.vars))
+
+recr_vars.t <- as.data.frame(t(recr_vars)) 
+names(recr_vars.t) <- c("checkID_3962583227","checkID_8257971326")
+recr_vars.t$column_name <- rownames(recr_vars.t)
+recr_vars.t <- merge(recr_vars.t,recr.bio[,c("column_name","Variable.Name")], by.x="column_name",by.y="column_name",all.x=T)
+bio_check <- fun.query_id("FlatConnect","biospecimen_JP","*",id12)
+bio_check_1 <- bio_check %>% select(Connect_ID, contains(biospe.vars))
+bio_check.t <-t(bio_check_1)
+bio_chek.t <- t(bio_check)
+
+  con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project,
+  dataset = "Connect",
+  billing = billing
+)
+
+
+  id1 <-  c(3962583227)
+  part_check <- fun.query_id("Connect","participants","*",id1)
+part1_vars <- part_check %>% select(contains(common.vars))
+part1_vars$rows <- rownames(part1_vars)
+d173836415_1 <- as.data.frame(rbindlist(part1_vars$d_173836415, use.names=TRUE, fill=TRUE, idcol="rows"))
+d_173836415_266_1 <- as.data.frame(do.call(rbind,d173836415_1[,"d_266600170"],quote=T))
+names(d_173836415_266_1) <- paste("d_173836415.d_266600170",names(d_173836415_266_1),sep=".")
+d_173836415_combo_1 <- cbind(d173836415_1,d_173836415_266_1)
+
+
+excl_col <- c("V1","V2","__key__","__key__")
+d_173836415_combo_1 <- d_173836415_combo_1[,-which(names(d_173836415_combo_1) %in% excl_col)]
+d_173836415_parti_1 <- merge(d_173836415_combo_1,part_vars[,c("token","Connect_ID","rows")], by="rows")
+d_173836415_parti_1$d_266600170 <- as.character(d_173836415_parti_1$d_266600170)
+
+
+d_173836415_parti_1.t <- as.data.frame(t(d_173836415_parti_1)) 
+names(d_173836415_parti_1.t) <- unlist(d_173836415_parti_1.t[which(row.names(d_173836415_parti_1.t)=="Connect_ID"),])
+
+
+  id2 <-  c(8257971326)
+  part_check_2 <- fun.query_id("Connect","participants","*",id2)
+part_vars_2 <- part_check_2 %>% select(contains(common.vars))
+part_vars_2$rows <- rownames(part_vars_2)
+d173836415_2 <- as.data.frame(rbindlist(part_vars_2$d_173836415, use.names=TRUE, fill=TRUE, idcol="rows"))
+d_173836415_266_2 <- as.data.frame(do.call(rbind,d173836415_2[,"d_266600170"],quote=T))
+names(d_173836415_266_2) <- paste("d_173836415.d_266600170",names(d_173836415_266_2),sep=".")
+d_173836415_combo_2 <- cbind(d173836415_2,d_173836415_266_2)
+
+
+excl_col <- c("V1","V2","__key__","__key__")
+d_173836415_combo_2 <- d_173836415_combo_2[,-which(names(d_173836415_combo_2) %in% excl_col)]
+d_173836415_parti_2 <- merge(d_173836415_combo_2,part_vars_2[,c("token","Connect_ID","rows")], by="rows")
+d_173836415_parti_2$d_266600170 <- as.character(d_173836415_parti_2$d_266600170)
+
+
+d_173836415_parti_2.t <- as.data.frame(t(d_173836415_parti_2)) 
+names(d_173836415_parti_2.t) <- unlist(d_173836415_parti_2.t[which(row.names(d_173836415_parti_2.t)=="Connect_ID"),])
+
+```
