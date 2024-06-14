@@ -1,0 +1,238 @@
+---
+title: "biospecimen_merged_5files_04172024"
+format: html
+editor: visual
+---
+
+## Request from **Stephanie J. Weinstein, MS, PhD**
+
+on Apr. 17, 2024
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+Hi Jing,
+
+Attached are data from a pilot study we are running in Connect on samples from Health Partners.  We need to have all the data merged into one file based on the variable “BSI ID”.  
+
+The BSI ID looks like this: “CXA019202 0801.” We will match on only the part in red, ignore the 4-digit number after that as that represents particular aliquots.
+
+ 
+
+We selected 40 samples from Streck tubes- see the file “40 HP Streck tubes for BPTL selection” that contains particular information on processing time, hemolysis, and temperature excursion.
+
+ 
+
+We sent aliquots to two labs, one lab is run by David Wong and the other is called “MoCha”.  The manifests for those aliquots are the two files that start with the word “Manifest”. Not that one of the labs had to combine two aliquots per individual so there are two rows per person in that file.
+
+ 
+
+Each of those labs sent back their data in the files starting with “20240402 . . .” and “connect samples QC . . .”
+
+ 
+
+We would like to have one Excel file that merges all the data together so Jazmyn can analyze the data.  In addition, Nicole advised that we should put the data in a Google bucket and that Jake could help get one set-up for Biospecimen data.  
+
+ 
+
+Would you be able to merge all the data into one Excel by the end of the week?  The Google bucket part is not as urgent for us.
+
+## Running Code
+
+All five files received from Stefanie via email are saved in "
+
+1.  40 HP Streck tubes for BPTL selection 3.8.24.xlsx
+
+2.  20240402 NCI QC 3rd-EFIRM report.xlsx
+
+3.  connect samples QC data_04_09_2024.xlsx
+
+4.  Manifest MoCha_Chris Karlovich 03.25.24.xlsx
+
+5.  Manifest UCLA_David Wong 03.25.24.xlsx
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+library(DBI) #the higher level BQ for working
+library(bigrquery) 
+library(data.table) ###to write or read and data management 
+# library(boxr) ###read or write data from/to box
+library(tidyverse) ###for data management https://tidyselect.r-lib.org/reference/faq-external-vector.html
+library(dplyr) ###data management some functions are not available in the dplyr masked in the tidyverse
+library(reshape)  ###to work on transition from long to wide or wide to long data
+library(listr) ###to work on a list of vector, files or..
+#library(sqldf) ##sql
+library(lubridate) ###date time it is already masked in 'tidyverse'
+library(ggplot2) ###plots
+library(ggrepel)
+library(ggpubr) ###for the publications of plots
+library(RColorBrewer) ###visions color http://www.sthda.com/english/wiki/colors-in-r
+library(gridExtra)
+#library(stringr) ###to work on patterns, charaters
+library(plyr)
+library(tidyr)
+library(tinytex) #for pdf
+#library(rmarkdown) ###for the output tables into other files: pdf, rtf, etc.
+library(janitor) #to get the summary sum
+library(finalfit) #https://cran.r-project.org/web/packages/finalfit/vignettes/export.html t
+library(expss) ###to add labels
+library(epiDisplay) ##recommended applied here crosstable, tab1
+#library(summarytools) ##recommended not applied in this R code
+library(gmodels) ##recommended but not applied in this R code
+library(magrittr)
+library(arsenal)
+library(gtsummary)
+library(kableExtra)
+#library(patchwork)
+library(rio)
+library(glue)
+library(xlsx)
+
+inputpath <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/biospecimen_analysis/batch2/data_merge/"
+outputpaht <- "~/Documents/Connect_projects/Biospecimen_Feb2022/Jing_projects/biospecQC_03082022/working_records/biospecimen_analysis/batch2/Routputs/"
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+\[1\] "20240402 NCI QC 3rd-EFIRM report.xlsx"
+
+\[2\] "40 HP Streck tubes for BPTL selection 3.8.24.xlsx"
+
+\[3\] "connect samples QC data_04_09_2024.xlsx"
+
+\[4\] "Manifest MoCha_Chris Karlovich 03.25.24.xlsx"
+
+\[5\] "Manifest UCLA_David Wong 03.25.24.xlsx"
+
+Based on Stephanie's response on the merging steps:
+
+1.  Start with the file “40 HP Streck tubes for BPTL selection 3.8.24.xlsx”
+
+    a.  remove CXA019621 (which was excluded because it did not have enough volume) 
+
+    b.  add in the data for CXA019561 which I provided today in the separate file
+
+    c.  Remove the first column OBS (this is extraneous information/not necessary here)
+
+    d.  Remove the last column “selected” (this is extraneous information/not necessary here)
+
+2.  Merge in some of the data (based on BSI ID) from David Wong’s lab from the file “20240402 NCI QC 3rd-EFIRM report.xlsx”.  We only need the data from the first tab called “Clinical samples”.  The only columns we need to keep are “BSI ID” (but renamed this “Wong BSI ID”) and “Current Label” (but rename this “Wong Current Label”) and the two red columns “EFIRM Alu(cps/mL)” (rename as “Wong EFIRM Alu(cps/mL)”) and “QC” (rename as “Wong QC”).
+
+    In other word: the "20240402 NCI QC 3rd-EFIRM report.xlsx" is the David Wong's lab results. In this file, the columns needed are BSI, Clinical samples, “EFIRM Alu(cps/mL)” and "QC" and are renamed with the prefix as "Wong"
+
+3.  We can ignore the file “Manifest UCLA_David Wong 03.25.24” since it contains all the same information as the “20240402 NCI QC 3rd-EFIRM report.xlsx” file.
+
+    Response: This file is not needed, duplicated.
+
+4.  Merge in all of the data (based on BSI ID) from the file from the MoCha lab “connect samples QC data_04_09_2024.xlsx”. Rename all the variables with a prefix of “MoCha” as in: “BSI ID” to “MoCha BSI ID” and “Sample name” to “MoCha Current Label”, etc.
+
+    Response: the "Connect sample QC data_04_09_2024.xlsx is the results from ""Manifest MoCha_Chris Karlovich 03.25.24.xlsx". In this data, all the columns will be retained and renamed with a prefix of "MoCha". Therefore the ""Manifest MoCha_Chris Karlovich 03.25.24.xlsx" can be ignored.
+
+5.  We can ignore the file “Manifest MoCha_Chris Karlovich 03.25.24” since it just confuses things.  That manifest contains 80 lines, but there are really only samples from 40 participants (2 samples each) which needed to be combined.  
+
+6.  You should end up with a file with 40 participants and approximately 27 columns.  The BSI ID from all three files should match.  The Current Label columns will not all match.
+
+7.  Please name this merged file “Health Partners Streck Second Pilot 2024”
+
+    The final merged file will be composed of 27 columns with BDI ID from three files: HP streck, NCI QC 3rd_EFIRM report, and "connect sample QC data"
+
+```{r}
+files.lst <- list.files(path=inputpath,pattern="*.xlsx",recursive=TRUE)
+#files <- c("nci_efirm","")
+df.ls <- {}
+for (f in 1:length(files.lst)){
+  df <- read_xlsx(paste0(inputpath, files.lst[f]))
+  df.ls[[f]] <- df
+  #print(c(files.lst[f], names(df)))
+}
+
+
+#the "20240402 NCI QC 3rd-EFIRM report.xlsx" is the David Wong's lab results. In this file, the columns needed are BSI, Clinical samples, “EFIRM Alu(cps/mL)” and "QC" and are renamed with the prefix as "Wong"
+nci_efirm <- as.data.frame(df.ls[[1]])[c(2:41),c(2:12)]
+names(nci_efirm) <- paste("Wong",df.ls[[1]][1,c(2:12)],sep="_")
+nci_efirm$BSI_root <- str_split_i(nci_efirm$`Wong_BSI ID`," ",1)
+
+HP_strek <- as.data.frame(df.ls[[2]])
+streck_nico <- as.data.frame(df.ls[[6]]) 
+strek_addon <- filter(streck_nico,grepl("CXA019561", `BSI ID`)) %>% 
+  mutate(`Needle to Freezer (Hours)` = as.numeric(`Needle to Freezer (Hours)`))
+
+#as Stephanie mentioned: " we had to replace sample CXA019621 because it did not have enough volume for the MoCha assay.   It was replaced with sample CXA019561. The data for that sample is embedded in this file."
+HP_streck_more <-  bind_rows( HP_strek[!grepl("CXA019621",HP_strek$`BSI ID`),], strek_addon) %>% select(-c(OBS,selected))
+
+
+#names(HP_streck_more) <- paste("HP_streck",names(HP_streck_more),sep="_")
+HP_streck_more$BSI_root <- str_split_i(HP_streck_more$`BSI ID`," ",1)
+
+
+# the "Connect sample QC data_04_09_2024.xlsx is the results from ""Manifest MoCha_Chris Karlovich 03.25.24.xlsx". In this data, all the columns will be retained and renamed with a prefix of "MoCha".  Therefore the ""Manifest MoCha_Chris Karlovich 03.25.24.xlsx" can be ignored. 
+# mocha_ck <- as.data.frame(df.ls[[4]])[c(17:96),c(2:11)] #80
+# names(mocha_ck) <- paste("mocha",df.ls[[4]][16,c(2:11)],sep="_")
+# mocha_ck$mocha_BSI_root <- str_split_i(mocha_ck$`mocha_BSI ID`," ",1)
+connect_qc <- as.data.frame(df.ls[[3]])
+names(connect_qc) <- paste("MoCha",names(connect_qc),sep="_") #BSI ID is the actual root"
+connect_qc 
+
+
+#We can ignore the file “Manifest UCLA_David Wong 03.25.24”
+#ucla_w <- as.data.frame(df.ls[[5]])[c(17:56),c(2:10)]
+#names(ucla_w) <- paste("wong",df.ls[[4]][16,c(2:10)],sep="_")
+#ucla_w$ucla_BSI_root <- str_split_i(ucla_w$`ucla_BSI ID`," ",1 )
+
+connect_nci <- merge(connect_qc,nci_efirm[,c("Wong_BSI ID","Wong_Current Label","Wong_EFIRM Alu(cps/mL)", "Wong_QC","BSI_root")],by.x="MoCha_BSI ID", by.y="BSI_root",all.x=T,all.y=T)
+
+#ucla_mocha <- merge(ulca_w,mocha, by.x="ucla_BSI_root",by.y="mocha_BSI_root",all.x=T,all.y=T)
+#nci_ucla_mocha <- merge(nci_efirm,ucla_mocha,by.x="BSI_root",by.y="ucla_BSI_root",all.x=T,all.y=T)
+
+#connect_nci_ucla_mocha <- merge(connect_qc,nci_ucla_mocha,by.x="BSI_root",by.y="BSI_root",all.x=T,all.y=T)
+
+#HP_connect_nci_ucla_mocha <- merge(HP_streck_more,connect_nci_ucla_mocha,by.x="BSI_root",by.y="connect_qc_BSI ID",all.x=T,all.y=T)
+
+HP_connect_nci_ucla_mocha <- merge(connect_nci,HP_streck_more,by.x="MoCha_BSI ID",by.y="BSI_root",all.x=T,all.y=T)
+
+HP_connect_nci_ucla_mocha <- HP_connect_nci_ucla_mocha[,c(14:27,1:13)]
+write.csv(HP_connect_nci_ucla_mocha,paste(outputpaht,"Connect_HP_streck_NCI_efirm_Mocha_UCLA_merged_",Sys.Date(),".csv",sep=""),na="",row.names = F)
+write.csv(HP_connect_nci_ucla_mocha,paste(outputpaht,"Health Partners Streck Second Pilot 2024.csv",sep=""),na="",row.names = F)
+
+HP_strek$`HP_streck_BSI ID`[which(HP_strek$`HP_streck_BSI ID` %nin% nci_efirm$`nci_efirm_BSI ID`)]
+#[1] "CXA019621 0800"
+HP_strek[which(HP_strek$`HP_streck_BSI ID` %nin% nci_efirm$`nci_efirm_BSI ID`),c("HP_streck_BSI ID","HP_streck_Current Label")]
+#   HP_streck_BSI ID HP_streck_Current Label
+#30   CXA019621 0800              FR25184310
+connect_nci_ucla_mocha[grepl("CXA019561",connect_nci_ucla_mocha$`connect_qc_BSI ID`),c("connect_qc_BSI ID","connect_qc_Sample Name")]
+#    connect_qc_BSI ID connect_qc_Sample Name
+# 31         CXA019561             FR25183782
+# 32         CXA019561             FR25183782
+
+connect_nci_ucla_mocha[which(connect_nci_ucla_mocha$`connect_qc_BSI ID` %nin% HP_strek$BSI_root),c("connect_qc_BSI ID","connect_qc_Sample Name")]
+#    connect_qc_BSI ID connect_qc_Sample Name
+# 31         CXA019561             FR25183782
+# 32         CXA019561             FR25183782
+
+#two samples are not matched with each other from HP streck file and the other four files. I emailed Stephanie to help me double check and confirm it before I can send this merged data 
+
+
+
+```
+
+the summaries of each dataset and the merged data:
+
+```{r}
+library(skimr)
+
+part1 <- HP_connect_nci_ucla_mocha %>% select(!contains("mocha")) %>% group_by(BSI_root) %>% distinct(BSI_root,.keep_all = T)
+
+part1.summary <- as_tibble(part1) %>% skim()
+
+part2 <- HP_connect_nci_ucla_mocha %>% select(BSI_root,contains("mocha")) %>% group_by(BSI_root) 
+part2.summary <- part2 %>% skim()
+
+
+write.csv(part1.summary,paste(outputpaht,"Connect_HP_streck_NCI_efirm_Mocha_UCLA_merged_summary_part1_",Sys.Date(),".csv",sep=""),na="",row.names = F)
+
+write.csv(part2.summary,paste(outputpaht,"Connect_HP_streck_NCI_efirm_Mocha_UCLA_merged_summary_part2_for_Mocha_part",Sys.Date(),".csv",sep=""),na="",row.names = F)
+
+HPstrek40.summary <- HP_connect_nci_ucla_mocha %>% skim()
+write.csv(part1.summary,paste(outputpaht,"Health Partners Streck Second Pilot 2024_Brief_summary_statistics_",Sys.Date(),".csv",sep=""),na="",row.names = F)
+```
