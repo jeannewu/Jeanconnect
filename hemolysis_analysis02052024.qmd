@@ -66,8 +66,8 @@ library(purrr)
 library(lme4)
 library(skimr)
 
-box_auth(client_id = "627lww8un9twnoa8f9rjvldf7kb56q1m",
-         client_secret = "gSKdYKLd65aQpZGrq9x4QVUNnn5C8qqm")
+box_auth(client_id = client,
+         client_secret = secret)
 ```
 
 Import the working data from Box: /Users/wuj12/Library/CloudStorage/Box-Box/CONNECT_DCEG ONLY/Biospecimen_DCEG ONLY/STRECK Tube (<https://nih.app.box.com/folder/229338866264?s=n3hxbtbmaze5f1sv8kpk63rufmgrn0f3>)
